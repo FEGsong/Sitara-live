@@ -1,0 +1,37 @@
+name: sitara_live
+description: Sitara Live — live streaming and gifting app
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Real-time live streaming (broadcast + viewer)
+  agora_rtc_engine: ^6.3.2
+
+  # Calling our token server & any future backend APIs
+  http: ^1.2.1
+
+  # Local persistence (e.g. caching logged-in user)
+  shared_preferences: ^2.2.3
+
+  # Camera / mic runtime permissions
+  permission_handler: ^11.3.1
+
+  # Firebase — real auth + database
+  firebase_core: ^3.1.0
+  firebase_auth: ^5.1.0
+  cloud_firestore: ^5.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
