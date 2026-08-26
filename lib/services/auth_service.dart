@@ -102,6 +102,7 @@ class AuthService {
     // return res.statusCode == 200;
 
     await _auth.signOut(); // clear the temporary phone session
-    return idToken.isNotEmpty; // placeholder until the function call above is wired in
+    return (idToken ?? '')
+        .isNotEmpty; // placeholder until the function call above is wired in
   }
 }

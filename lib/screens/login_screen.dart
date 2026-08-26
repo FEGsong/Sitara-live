@@ -46,7 +46,8 @@ class _LoginScreenState extends State<LoginScreen> {
         );
         AppState.instance.uid = cred.user!.uid;
       } else {
-        final cred = await _auth.signIn(phone: _fullPhone(), password: password);
+        final cred =
+            await _auth.signIn(phone: _fullPhone(), password: password);
         AppState.instance.uid = cred.user!.uid;
       }
 
@@ -101,27 +102,33 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (ctx, setSheetState) {
             return Padding(
               padding: EdgeInsets.only(
-                left: 20, right: 20, top: 22,
+                left: 20,
+                right: 20,
+                top: 22,
                 bottom: MediaQuery.of(ctx).viewInsets.bottom + 26,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Reset Password', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text('Reset Password',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(
                     otpSent
                         ? 'Enter the code sent to your phone, then set a new password'
                         : 'Enter your phone number — we will send you a verification code',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                    style:
+                        const TextStyle(color: AppColors.muted, fontSize: 12),
                   ),
                   const SizedBox(height: 16),
                   if (!otpSent) ...[
                     TextField(
                       controller: resetPhoneCtrl,
                       keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(hintText: '+92 3XX XXXXXXX'),
+                      decoration:
+                          const InputDecoration(hintText: '+92 3XX XXXXXXX'),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -151,13 +158,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextField(
                       controller: otpCtrl,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(hintText: '6-digit code'),
+                      decoration:
+                          const InputDecoration(hintText: '6-digit code'),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: newPasswordCtrl,
                       obscureText: true,
-                      decoration: const InputDecoration(hintText: 'New password'),
+                      decoration:
+                          const InputDecoration(hintText: 'New password'),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -196,38 +205,47 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               children: [
                 Container(
-                  width: 64, height: 64,
+                  width: 64,
+                  height: 64,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [AppColors.hot, Color(0xFF7A1BFF)]),
+                    gradient: const LinearGradient(
+                        colors: [AppColors.hot, Color(0xFF7A1BFF)]),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   alignment: Alignment.center,
                   child: const Text('⭐', style: TextStyle(fontSize: 28)),
                 ),
                 const SizedBox(height: 14),
-                const Text('Sitara Live', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                const Text('Sitara Live',
+                    style:
+                        TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 const Text('Go live, connect, and send gifts',
                     style: TextStyle(color: AppColors.muted, fontSize: 13)),
                 const SizedBox(height: 20),
-
                 Container(
-                  decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.all(4),
                   child: Row(
                     children: [
-                      Expanded(child: _tabButton('Sign Up', _isSignup, () => setState(() => _isSignup = true))),
-                      Expanded(child: _tabButton('Log In', !_isSignup, () => setState(() => _isSignup = false))),
+                      Expanded(
+                          child: _tabButton('Sign Up', _isSignup,
+                              () => setState(() => _isSignup = true))),
+                      Expanded(
+                          child: _tabButton('Log In', !_isSignup,
+                              () => setState(() => _isSignup = false))),
                     ],
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 _label('Phone Number *'),
                 Row(
                   children: [
                     Container(
-                      width: 64, height: 52,
+                      width: 64,
+                      height: 52,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: AppColors.surface,
@@ -241,13 +259,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: TextField(
                         controller: _phoneCtrl,
                         keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(hintText: '3XX XXXXXXX'),
+                        decoration:
+                            const InputDecoration(hintText: '3XX XXXXXXX'),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 14),
-
                 _label('Password *'),
                 TextField(
                   controller: _passwordCtrl,
@@ -255,35 +273,76 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: const InputDecoration(hintText: 'Enter password'),
                 ),
                 const SizedBox(height: 14),
-
                 if (_isSignup) ...[
                   _label('Username'),
                   TextField(
                     controller: _usernameCtrl,
-                    decoration: const InputDecoration(hintText: 'Choose a username'),
+                    decoration:
+                        const InputDecoration(hintText: 'Choose a username'),
                   ),
                   const SizedBox(height: 14),
                 ],
-
                 const SizedBox(height: 6),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _loading ? null : _submit,
-                    child: Text(_loading ? 'Please wait...' : (_isSignup ? 'Sign Up' : 'Log In')),
+                    child: Text(_loading
+                        ? 'Please wait...'
+                        : (_isSignup ? 'Sign Up' : 'Log In')),
                   ),
                 ),
                 const SizedBox(height: 12),
                 GestureDetector(
                   onTap: _openForgotPassword,
                   child: const Text('Forgot Password?',
-                      style: TextStyle(color: AppColors.muted, fontSize: 12, decoration: TextDecoration.underline)),
+                      style: TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 12,
+                          decoration: TextDecoration.underline)),
                 ),
                 const SizedBox(height: 8),
-                const Text('By continuing you agree to our Terms & Privacy Policy',
+                const Text(
+                    'By continuing you agree to our Terms & Privacy Policy',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.muted, fontSize: 11)),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _tabButton(String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? AppColors.hot : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        alignment: Alignment.center,
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: active ? Colors.white : AppColors.muted)),
+      ),
+    );
+  }
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 6, top: 2),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(text,
+              style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.muted,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: .5)),
+        ),
+      );
+}

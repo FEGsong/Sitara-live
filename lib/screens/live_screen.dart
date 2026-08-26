@@ -5,13 +5,15 @@ import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/agora_service.dart';
+import '../services/firestore_service.dart';
 import '../widgets/coin_pill.dart';
 
 class LiveScreen extends StatefulWidget {
   final bool isHost;
   final String? hostName;
   final String? viewers;
-  const LiveScreen({super.key, required this.isHost, this.hostName, this.viewers});
+  const LiveScreen(
+      {super.key, required this.isHost, this.hostName, this.viewers});
 
   @override
   State<LiveScreen> createState() => _LiveScreenState();
@@ -57,14 +59,21 @@ class _LiveScreenState extends State<LiveScreen> {
     super.initState();
     // Channel name would normally be the room/session id from your backend.
     final channel = 'room_${widget.hostName ?? 'self'}';
-    _agora.joinChannel(channel: channel, isHost: widget.isHost).catchError((e) {
-      _addChat('System', 'Could not connect: $e', false);
-    });
+    _connectToLive(channel);
 
-    _mockTimer = Timer.periodic(const Duration(seconds: 3), (_) => _mockActivity());
+    _mockTimer =
+        Timer.periodic(const Duration(seconds: 3), (_) => _mockActivity());
 
     if (!widget.isHost && AppState.instance.adminMode) {
       Future.delayed(const Duration(milliseconds: 800), _triggerAdminEffect);
+    }
+  }
+
+  Future<void> _connectToLive(String channel) async {
+    try {
+      await _agora.joinChannel(channel: channel, isHost: widget.isHost);
+    } catch (e) {
+      _addChat('System', 'Could not connect: $e', false);
     }
   }
 
@@ -84,9 +93,16 @@ class _LiveScreenState extends State<LiveScreen> {
 
   void _mockActivity() {
     const users = ['Hamza', 'Iqra', 'Usman', 'Fatima', 'Ali_92', 'Noor'];
-    const msgs = ['Assalam o Alaikum!', 'Hey everyone!', 'Nice stream 🔥', 'Audio is crystal clear', '👏👏👏'];
+    const msgs = [
+      'Assalam o Alaikum!',
+      'Hey everyone!',
+      'Nice stream 🔥',
+      'Audio is crystal clear',
+      '👏👏👏'
+    ];
     final rnd = Random();
-    _addChat(users[rnd.nextInt(users.length)], msgs[rnd.nextInt(msgs.length)], false);
+    _addChat(users[rnd.nextInt(users.length)], msgs[rnd.nextInt(msgs.length)],
+        false);
     setState(() => _viewerCount = 120 + rnd.nextInt(40));
   }
 
@@ -101,7 +117,8 @@ class _LiveScreenState extends State<LiveScreen> {
       return;
     }
     setState(() {
-      AppState.instance.spendCoins(gift['price'] as int);
+      FirestoreService()
+          .spendCoins(AppState.instance.uid, gift['price'] as int);
       AppState.instance.giftsSent++;
       _giftTrayOpen = false;
     });
@@ -126,7 +143,8 @@ class _LiveScreenState extends State<LiveScreen> {
     });
   }
 
-  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _snack(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   @override
   Widget build(BuildContext context) {
@@ -139,22 +157,28 @@ class _LiveScreenState extends State<LiveScreen> {
 
           // top bar: host chip + close
           Positioned(
-            top: 14, left: 14, right: 14,
+            top: 14,
+            left: 14,
+            right: 14,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
                   padding: const EdgeInsets.fromLTRB(5, 5, 10, 5),
-                  decoration: BoxDecoration(color: Colors.black.withOpacity(.45), borderRadius: BorderRadius.circular(999)),
+                  decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(.45),
+                      borderRadius: BorderRadius.circular(999)),
                   child: Row(
                     children: [
                       Stack(
                         clipBehavior: Clip.none,
                         children: [
                           Container(
-                            width: 28, height: 28,
+                            width: 28,
+                            height: 28,
                             decoration: const BoxDecoration(
-                              gradient: LinearGradient(colors: [AppColors.hot, Color(0xFF7A1BFF)]),
+                              gradient: LinearGradient(
+                                  colors: [AppColors.hot, Color(0xFF7A1BFF)]),
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -169,10 +193,17 @@ class _LiveScreenState extends State<LiveScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.isHost ? (AppState.instance.nickname.isNotEmpty ? AppState.instance.nickname : 'You (Host)') : (widget.hostName ?? 'Host'),
-                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                            widget.isHost
+                                ? (AppState.instance.nickname.isNotEmpty
+                                    ? AppState.instance.nickname
+                                    : 'You (Host)')
+                                : (widget.hostName ?? 'Host'),
+                            style: const TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.bold),
                           ),
-                          Text('● $_viewerCount viewers', style: const TextStyle(fontSize: 10.5, color: AppColors.cyan)),
+                          Text('● $_viewerCount viewers',
+                              style: const TextStyle(
+                                  fontSize: 10.5, color: AppColors.cyan)),
                         ],
                       ),
                     ],
@@ -181,10 +212,14 @@ class _LiveScreenState extends State<LiveScreen> {
                 GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
                   child: Container(
-                    width: 32, height: 32,
-                    decoration: BoxDecoration(color: Colors.black.withOpacity(.45), shape: BoxShape.circle),
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(.45),
+                        shape: BoxShape.circle),
                     alignment: Alignment.center,
-                    child: const Icon(Icons.close, size: 16, color: Colors.white),
+                    child:
+                        const Icon(Icons.close, size: 16, color: Colors.white),
                   ),
                 ),
               ],
@@ -206,7 +241,9 @@ class _LiveScreenState extends State<LiveScreen> {
 
           // chat area
           Positioned(
-            left: 0, bottom: 78, width: MediaQuery.of(context).size.width * .68,
+            left: 0,
+            bottom: 78,
+            width: MediaQuery.of(context).size.width * .68,
             height: MediaQuery.of(context).size.height * .32,
             child: ListView(
               reverse: true,
@@ -220,11 +257,16 @@ class _LiveScreenState extends State<LiveScreen> {
 
           // bottom bar
           Positioned(
-            left: 0, right: 0, bottom: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             child: Container(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
               decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black54, Colors.transparent]),
+                gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [Colors.black54, Colors.transparent]),
               ),
               child: Row(
                 children: [
@@ -237,8 +279,11 @@ class _LiveScreenState extends State<LiveScreen> {
                         hintStyle: const TextStyle(color: Colors.white70),
                         filled: true,
                         fillColor: Colors.white.withOpacity(.08),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(999), borderSide: BorderSide.none),
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 14),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(999),
+                            borderSide: BorderSide.none),
                       ),
                       onSubmitted: (val) {
                         if (val.trim().isEmpty) return;
@@ -251,8 +296,12 @@ class _LiveScreenState extends State<LiveScreen> {
                   GestureDetector(
                     onTap: () => setState(() => _giftTrayOpen = true),
                     child: Container(
-                      width: 40, height: 40,
-                      decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.hot, Color(0xFFFF6B9D)]), shape: BoxShape.circle),
+                      width: 40,
+                      height: 40,
+                      decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                              colors: [AppColors.hot, Color(0xFFFF6B9D)]),
+                          shape: BoxShape.circle),
                       alignment: Alignment.center,
                       child: const Text('🎁'),
                     ),
@@ -265,7 +314,8 @@ class _LiveScreenState extends State<LiveScreen> {
           // gift tray
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
-            left: 0, right: 0,
+            left: 0,
+            right: 0,
             bottom: _giftTrayOpen ? 0 : -320,
             child: _giftTray(),
           ),
@@ -291,10 +341,13 @@ class _LiveScreenState extends State<LiveScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(widget.isHost ? '📷' : '🎥', style: const TextStyle(fontSize: 34)),
+          Text(widget.isHost ? '📷' : '🎥',
+              style: const TextStyle(fontSize: 34)),
           const SizedBox(height: 8),
           Text(
-            widget.isHost ? 'Connecting camera…' : '${widget.hostName ?? 'Host'} is broadcasting live',
+            widget.isHost
+                ? 'Connecting camera…'
+                : '${widget.hostName ?? 'Host'} is broadcasting live',
             style: const TextStyle(color: AppColors.muted, fontSize: 13),
             textAlign: TextAlign.center,
           ),
@@ -308,15 +361,22 @@ class _LiveScreenState extends State<LiveScreen> {
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: c.isGift ? AppColors.gold.withOpacity(.12) : Colors.black.withOpacity(.35),
-        border: c.isGift ? Border.all(color: AppColors.gold.withOpacity(.3)) : null,
+        color: c.isGift
+            ? AppColors.gold.withOpacity(.12)
+            : Colors.black.withOpacity(.35),
+        border:
+            c.isGift ? Border.all(color: AppColors.gold.withOpacity(.3)) : null,
         borderRadius: BorderRadius.circular(10),
       ),
       child: RichText(
         text: TextSpan(
           style: const TextStyle(fontSize: 12.5, color: Colors.white),
           children: [
-            TextSpan(text: '${c.user}: ', style: TextStyle(color: c.isGift ? AppColors.gold : AppColors.cyan, fontWeight: FontWeight.bold)),
+            TextSpan(
+                text: '${c.user}: ',
+                style: TextStyle(
+                    color: c.isGift ? AppColors.gold : AppColors.cyan,
+                    fontWeight: FontWeight.bold)),
             TextSpan(text: c.text),
           ],
         ),
@@ -337,7 +397,8 @@ class _LiveScreenState extends State<LiveScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Send a Gift', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              const Text('Send a Gift',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
               CoinPill(coins: AppState.instance.coins),
             ],
           ),
@@ -352,21 +413,30 @@ class _LiveScreenState extends State<LiveScreen> {
                 final g = kGifts[i];
                 final selected = _selectedGift == g['id'];
                 return GestureDetector(
-                  onTap: () => setState(() => _selectedGift = g['id'] as String),
+                  onTap: () =>
+                      setState(() => _selectedGift = g['id'] as String),
                   child: Container(
                     width: 76,
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: AppColors.surface2,
-                      border: Border.all(color: selected ? AppColors.gold : AppColors.line),
+                      border: Border.all(
+                          color: selected ? AppColors.gold : AppColors.line),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Column(
                       children: [
-                        Text(g['icon'] as String, style: const TextStyle(fontSize: 26)),
+                        Text(g['icon'] as String,
+                            style: const TextStyle(fontSize: 26)),
                         const SizedBox(height: 4),
-                        Text('${g['price']} 🪙', style: const TextStyle(fontSize: 11, color: AppColors.gold, fontWeight: FontWeight.w600)),
-                        Text(g['name'] as String, style: const TextStyle(fontSize: 10, color: AppColors.muted)),
+                        Text('${g['price']} 🪙',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.gold,
+                                fontWeight: FontWeight.w600)),
+                        Text(g['name'] as String,
+                            style: const TextStyle(
+                                fontSize: 10, color: AppColors.muted)),
                       ],
                     ),
                   ),
@@ -386,7 +456,8 @@ class _LiveScreenState extends State<LiveScreen> {
               const SizedBox(width: 8),
               Expanded(
                 flex: 2,
-                child: ElevatedButton(onPressed: _sendGift, child: const Text('Send Gift')),
+                child: ElevatedButton(
+                    onPressed: _sendGift, child: const Text('Send Gift')),
               ),
             ],
           ),
@@ -404,13 +475,16 @@ class _FlyingGiftWidget extends StatefulWidget {
   State<_FlyingGiftWidget> createState() => _FlyingGiftWidgetState();
 }
 
-class _FlyingGiftWidgetState extends State<_FlyingGiftWidget> with SingleTickerProviderStateMixin {
+class _FlyingGiftWidgetState extends State<_FlyingGiftWidget>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))..forward();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 2200))
+      ..forward();
   }
 
   @override
@@ -445,12 +519,15 @@ class _RotatingAura extends StatefulWidget {
   State<_RotatingAura> createState() => _RotatingAuraState();
 }
 
-class _RotatingAuraState extends State<_RotatingAura> with SingleTickerProviderStateMixin {
+class _RotatingAuraState extends State<_RotatingAura>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1600))
+      ..repeat();
   }
 
   @override
@@ -466,7 +543,12 @@ class _RotatingAuraState extends State<_RotatingAura> with SingleTickerProviderS
       child: Container(
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: SweepGradient(colors: [AppColors.gold, Colors.transparent, AppColors.gold, Colors.transparent]),
+          gradient: SweepGradient(colors: [
+            AppColors.gold,
+            Colors.transparent,
+            AppColors.gold,
+            Colors.transparent
+          ]),
         ),
       ),
     );
@@ -479,13 +561,16 @@ class _RisingCoin extends StatefulWidget {
   State<_RisingCoin> createState() => _RisingCoinState();
 }
 
-class _RisingCoinState extends State<_RisingCoin> with SingleTickerProviderStateMixin {
+class _RisingCoinState extends State<_RisingCoin>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1900))..forward();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1900))
+      ..forward();
   }
 
   @override
@@ -504,12 +589,14 @@ class _RisingCoinState extends State<_RisingCoin> with SingleTickerProviderState
         final opacity = t < 0.15 ? t / 0.15 : (t > 0.85 ? (1 - t) / 0.15 : 1.0);
         return Positioned(
           bottom: 100 + t * (h * 0.4),
-          left: 0, right: 0,
+          left: 0,
+          right: 0,
           child: Opacity(
             opacity: opacity.clamp(0, 1),
             child: Transform.rotate(
               angle: t * 10,
-              child: const Center(child: Text('🪙', style: TextStyle(fontSize: 40))),
+              child: const Center(
+                  child: Text('🪙', style: TextStyle(fontSize: 40))),
             ),
           ),
         );

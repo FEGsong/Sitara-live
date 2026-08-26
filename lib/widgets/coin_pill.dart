@@ -22,10 +22,13 @@ class CoinPill extends StatelessWidget {
           Container(
             width: 14,
             height: 14,
-            decoration: const BoxDecoration(color: AppColors.gold, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+                color: AppColors.gold, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
-          Text('$coins', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+          Text('$coins',
+              style:
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
         ],
       ),
     );

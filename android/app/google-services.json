@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "139127173908",
+    "project_id": "sitara-live-13df7",
+    "storage_bucket": "sitara-live-13df7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:139127173908:android:0a0f55749d425c6e8ac801",
+        "android_client_info": {
+          "package_name": "com.sitaralive.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5cCTl-_qyZ9wcQX-9rlOEdHJ8tk6DJ_M"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

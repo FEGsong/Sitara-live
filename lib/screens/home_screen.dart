@@ -88,3 +88,115 @@ class _HomeTab extends StatelessWidget {
                 gradient: const LinearGradient(colors: [Color(0xFF2A0E3D), Color(0xFF3A0F2E)]),
                 border: Border.all(color: const Color(0xFF43223F)),
                 borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Start Your Live Stream', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
+                  const Text('Turn on your camera and mic to start broadcasting — viewers can send you gifts.',
+                      style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+                  const SizedBox(height: 14),
+                  ElevatedButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const LiveScreen(isHost: true)),
+                    ),
+                    child: const Text('🔴 Go Live'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverToBoxAdapter(
+            child: Text('LIVE NOW',
+                style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.bold, letterSpacing: .8)),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: .82,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, i) {
+                final h = mockLiveHosts[i];
+                return _LiveCard(host: h);
+              },
+              childCount: mockLiveHosts.length,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LiveCard extends StatelessWidget {
+  final Map<String, dynamic> host;
+  const _LiveCard({required this.host});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => LiveScreen(isHost: false, hostName: host['name'], viewers: host['viewers'])),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.line),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [host['c1'], host['c2']]),
+                ),
+                padding: const EdgeInsets.all(8),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0, left: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(color: AppColors.hot, borderRadius: BorderRadius.circular(6)),
+                        child: const Text('LIVE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    Positioned(
+                      top: 0, right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(.5), borderRadius: BorderRadius.circular(6)),
+                        child: Text('👁 ${host['viewers']}', style: const TextStyle(fontSize: 10)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(host['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text(host['tag'], style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

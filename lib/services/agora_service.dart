@@ -16,7 +16,8 @@ class AgoraService {
     required String channel,
     required String role, // 'host' or 'audience'
   }) async {
-    final uri = Uri.parse('${AppConfig.tokenServerUrl}/rtc-token?channel=$channel&role=$role');
+    final uri = Uri.parse(
+        '${AppConfig.tokenServerUrl}/rtc-token?channel=$channel&role=$role');
     final res = await http.get(uri);
     if (res.statusCode != 200) {
       throw Exception('Token server error: ${res.body}');
@@ -28,13 +29,16 @@ class AgoraService {
     required String channel,
     required bool isHost,
   }) async {
-    final data = await _fetchToken(channel: channel, role: isHost ? 'host' : 'audience');
+    final data =
+        await _fetchToken(channel: channel, role: isHost ? 'host' : 'audience');
 
     final engine = createAgoraRtcEngine();
     await engine.initialize(RtcEngineContext(appId: data['appId'] as String));
     await engine.enableVideo();
     await engine.setClientRole(
-      role: isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
+      role: isHost
+          ? ClientRoleType.clientRoleBroadcaster
+          : ClientRoleType.clientRoleAudience,
     );
 
     await engine.joinChannel(
@@ -42,7 +46,9 @@ class AgoraService {
       channelId: channel,
       uid: 0,
       options: ChannelMediaOptions(
-        clientRoleType: isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
+        clientRoleType: isHost
+            ? ClientRoleType.clientRoleBroadcaster
+            : ClientRoleType.clientRoleAudience,
       ),
     );
 
