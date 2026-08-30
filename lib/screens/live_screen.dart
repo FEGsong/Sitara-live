@@ -61,7 +61,7 @@ class _LiveScreenState extends State<LiveScreen> {
     final channel = 'room_${widget.hostName ?? 'self'}';
     _connectToLive(channel);
 
-    _mockTimer =
+    // _mockTimer = Timer.periodic(const Duration(seconds: 3), (_) => _mockActivity());
 
     if (!widget.isHost && AppState.instance.adminMode) {
       Future.delayed(const Duration(milliseconds: 800), _triggerAdminEffect);
