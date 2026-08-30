@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
+  google_fonts: ^6.2.1
 
   # Real-time live streaming (broadcast + viewer)
   agora_rtc_engine: ^6.3.2
