@@ -19,7 +19,7 @@ class FirestoreService {
       'username': username,
       'nickname': username,
       'profilePublic': true,
-      'coins': 500, // starter coins
+      'coins': 100, // starter coins
       'earningsPKR': 0,
       'giftsSent': 0,
       'giftsReceived': 0,
