@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isSignup = true;
   bool _loading = false;
-
+  bool _obscurePassword = true;
   String _fullPhone() => '+92${_phoneCtrl.text.trim()}';
 
   Future<void> _submit() async {
@@ -213,7 +213,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('⭐', style: TextStyle(fontSize: 28)),
+                  child: Image.asset('assets/images/logo.png', width: 60, height: 60),
                 ),
                 const SizedBox(height: 14),
                 const Text('Sitara Live',
@@ -276,10 +276,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (_isSignup) ...[
                   _label('Username'),
                   TextField(
-                    controller: _usernameCtrl,
-                    decoration:
-                        const InputDecoration(hintText: 'Choose a username'),
-                  ),
+  controller: _passwordCtrl,
+  obscureText: _obscurePassword,
+  decoration: InputDecoration(
+    hintText: 'Enter password',
+    suffixIcon: IconButton(
+      icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+    ),
+  ),
+),
                   const SizedBox(height: 14),
                 ],
                 const SizedBox(height: 6),
