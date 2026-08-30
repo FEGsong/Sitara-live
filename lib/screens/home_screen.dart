@@ -41,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [_HomeTab(), const WalletScreen(embedded: true), const ProfileScreen(embedded: true)];
+    final pages = [_HomeTab(), const WalletScreen(embed: true), const InboxScreen(embed: true), const ProfileScreen(embed: true)];
 
     return Scaffold(
       body: SafeArea(child: pages[_tab]),
@@ -51,9 +51,11 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.bgDeep,
         indicatorColor: Colors.transparent,
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.home, color: AppColors.hot), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.account_balance_wallet, color: AppColors.hot), label: 'Wallet'),
-          NavigationDestination(icon: Icon(Icons.person_outline, color: AppColors.muted), selectedIcon: Icon(Icons.person, color: AppColors.hot), label: 'Profile'),
+  NavigationDestination(icon: Icon(Icons.home_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.home, color: AppColors.hot), label: 'Home'),
+  NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.account_balance_wallet, color: AppColors.hot), label: 'Wallet'),
+  NavigationDestination(icon: Icon(Icons.mail_outline, color: AppColors.muted), selectedIcon: Icon(Icons.mail, color: AppColors.hot), label: 'Inbox'),
+  NavigationDestination(icon: Icon(Icons.person_outline, color: AppColors.muted), selectedIcon: Icon(Icons.person, color: AppColors.hot), label: 'Profile'),
+],
         ],
       ),
     );
