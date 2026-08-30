@@ -7,6 +7,7 @@ class AppColors {
   static const Color surface = Color(0xFF161616);
   static const Color surface2 = Color(0xFF1E1E1E);
   static const Color line = Color(0xFF2A2A2A);
+  static const Color border = Color(0xFF2A2A2A);
   static const Color white = Color(0xFFF2F2F2);
   static const Color muted = Color(0xFF8A8A8A);
   static const Color hot = Color(0xFFF2F2F2);
