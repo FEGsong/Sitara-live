@@ -62,7 +62,6 @@ class _LiveScreenState extends State<LiveScreen> {
     _connectToLive(channel);
 
     _mockTimer =
-        Timer.periodic(const Duration(seconds: 3), (_) => _mockActivity());
 
     if (!widget.isHost && AppState.instance.adminMode) {
       Future.delayed(const Duration(milliseconds: 800), _triggerAdminEffect);
@@ -70,12 +69,13 @@ class _LiveScreenState extends State<LiveScreen> {
   }
 
   Future<void> _connectToLive(String channel) async {
-    try {
-      await _agora.joinChannel(channel: channel, isHost: widget.isHost);
-    } catch (e) {
-      _addChat('System', 'Could not connect: $e', false);
-    }
+  try {
+    await _agora.joinChannel(channel: channel, isHost: widget.isHost);
+    if (mounted) setState(() {});
+  } catch (e) {
+    _addChat('System', 'Could not connect: $e', false);
   }
+}
 
   @override
   void dispose() {
