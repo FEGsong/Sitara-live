@@ -6,6 +6,7 @@ import '../widgets/coin_pill.dart';
 import 'live_screen.dart';
 import 'wallet_screen.dart';
 import 'profile_screen.dart';
+import 'inbox_screen.dart';
 
 /// Mock list of currently-live hosts — swap for a real Firestore query
 /// (e.g. "rooms" collection where status == 'live') once the backend exists.
