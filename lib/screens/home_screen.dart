@@ -42,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [_HomeTab(), const WalletScreen(embed: true), const InboxScreen(embed: true), const ProfileScreen(embed: true)];
+    final pages = [_HomeTab(), const WalletScreen(embedded: true), const InboxScreen(embed: true), const ProfileScreen(embedded: true)];
 
     return Scaffold(
       body: SafeArea(child: pages[_tab]),
