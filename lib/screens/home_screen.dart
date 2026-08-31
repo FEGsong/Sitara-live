@@ -57,7 +57,6 @@ class _HomeScreenState extends State<HomeScreen> {
   NavigationDestination(icon: Icon(Icons.mail_outline, color: AppColors.muted), selectedIcon: Icon(Icons.mail, color: AppColors.hot), label: 'Inbox'),
   NavigationDestination(icon: Icon(Icons.person_outline, color: AppColors.muted), selectedIcon: Icon(Icons.person, color: AppColors.hot), label: 'Profile'),
 ],
-        ],
       ),
     );
   }
