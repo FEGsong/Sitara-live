@@ -21,6 +21,7 @@ class AppState extends ChangeNotifier {
   int giftsReceived = 0;
 
   bool adminMode = false;
+  bool isAdmin = false;
 
   /// Called from a Firestore snapshot listener to keep local state
   /// in sync with the database.
@@ -29,6 +30,8 @@ class AppState extends ChangeNotifier {
     username = data['username'] ?? username;
     nickname = data['nickname'] ?? nickname;
     profilePublic = data['profilePublic'] ?? profilePublic;
+    profilePublic = data['profilePublic'] ?? profilePublic;
+    isAdmin = data['isAdmin'] ?? isAdmin;
     coins = data['coins'] ?? coins;
     earningsPKR = (data['earningsPKR'] ?? earningsPKR).toDouble();
     giftsSent = data['giftsSent'] ?? giftsSent;
@@ -41,7 +44,8 @@ class AppState extends ChangeNotifier {
     phone = '';
     username = '';
     nickname = '';
-    coins = 500;
+    isAdmin = false;
+    coins = 150;
     earningsPKR = 0;
     giftsSent = 0;
     giftsReceived = 0;
