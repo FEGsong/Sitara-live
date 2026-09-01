@@ -115,21 +115,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onPressed: _saveProfile,
                       child: const Text('Save Profile'))),
               const SizedBox(height: 20),
-              _toggleRow(
-                'Admin Mode (for me)',
-                'Trigger the "Admin watching" effect when you join someone\'s live',
-                state.adminMode,
-                (v) => setState(() => state.adminMode = v),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const AdminScreen())),
-                  child: const Text('🛠 Admin Panel — Admins & Coin Requests'),
-                ),
-              ),
+              if (AppState.instance.isAdmin) ...[
+  _toggleRow(
+    'Admin Mode (for me)',
+    'Trigger the "Admin watching" effect when you join someone\'s live',
+    state.adminMode,
+    (v) => setState(() => state.adminMode = v),
+  ),
+  const SizedBox(height: 12),
+  SizedBox(
+    width: double.infinity,
+    child: OutlinedButton(
+      onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AdminScreen())),
+      child: const Text('🛠️ Admin Panel — Admins & Coin Requests'),
+    ),
+  ),
+],
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
