@@ -115,7 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onPressed: _saveProfile,
                       child: const Text('Save Profile'))),
               const SizedBox(height: 20),
-              if (AppState.instance.isAdmin) ...[
+              if (AppState.instance.isOwnerOrAdmin) ...[
   _toggleRow(
     'Admin Mode (for me)',
     'Trigger the "Admin watching" effect when you join someone\'s live',
