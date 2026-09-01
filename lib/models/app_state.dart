@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 class AppState extends ChangeNotifier {
   AppState._();
   static final AppState instance = AppState._();
-
+  static const String ownerPhone = '+923289647724'; 
   String uid = '';
   String phone = '';
   String username = '';
@@ -22,7 +22,7 @@ class AppState extends ChangeNotifier {
 
   bool adminMode = false;
   bool isAdmin = false;
-
+  bool get isOwnerOrAdmin => phone == ownerPhone || isAdmin;
   /// Called from a Firestore snapshot listener to keep local state
   /// in sync with the database.
   void syncFromFirestore(Map<String, dynamic> data) {
