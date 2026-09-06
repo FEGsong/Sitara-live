@@ -40,10 +40,12 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       if (_isSignup) {
         final cred = await _auth.signUp(
-          phone: _fullPhone(),
-          password: password,
-          username: _usernameCtrl.text.trim(),
-        );
+  phone: _fullPhone(),
+  password: password,
+  username: _usernameCtrl.text.trim(),
+).timeout(const Duration(seconds: 15), onTimeout: () {
+  throw Exception('Request timed out — check your internet connection');
+});
         AppState.instance.uid = cred.user!.uid;
       } else {
         final cred =
