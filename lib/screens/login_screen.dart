@@ -55,11 +55,23 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
-    } on FirebaseAuthException catch (e) {
-      _toast(_friendlyError(e));
-    } catch (e) {
-      _toast('Something went wrong: $e');
-    } finally {
+   } on FirebaseAuthException catch (e) {
+  if (mounted) {
+    showDialog(context: context, builder: (_) => AlertDialog(
+      title: const Text('Firebase Auth Error'),
+      content: Text('${e.code}\n\n${e.message}'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+    ));
+  }
+} catch (e) {
+  if (mounted) {
+    showDialog(context: context, builder: (_) => AlertDialog(
+      title: const Text('Error'),
+      content: Text('$e'),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+    ));
+  }
+} finally {
       if (mounted) setState(() => _loading = false);
     }
   }
