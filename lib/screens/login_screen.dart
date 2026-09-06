@@ -281,25 +281,26 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 14),
                 _label('Password *'),
-                TextField(
-                  controller: _passwordCtrl,
-                  obscureText: true,
-                  decoration: const InputDecoration(hintText: 'Enter password'),
-                ),
-                const SizedBox(height: 14),
-                if (_isSignup) ...[
-                  _label('Username'),
-                  TextField(
-  controller: _passwordCtrl,
-  obscureText: _obscurePassword,
-  decoration: InputDecoration(
-    hintText: 'Enter password',
-    suffixIcon: IconButton(
-      icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+    TextField(
+      controller: _passwordCtrl,
+      obscureText: _obscurePassword,
+      decoration: InputDecoration(
+        hintText: 'Enter password',
+        suffixIcon: IconButton(
+          icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+        ),
+      ),
     ),
-  ),
-),
+                    
+                    ),
+                    const SizedBox(height: 14),
+                    if (_isSignup) ...[
+                      _label('Username'),
+                      TextField(
+                        controller: _usernameCtrl,
+                        decoration: const InputDecoration(hintText: 'Enter Username'),
+                      ),
                   const SizedBox(height: 14),
                 ],
                 const SizedBox(height: 6),
