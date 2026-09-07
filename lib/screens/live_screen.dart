@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/agora_service.dart';
@@ -10,10 +10,16 @@ import '../widgets/coin_pill.dart';
 
 class LiveScreen extends StatefulWidget {
   final bool isHost;
+  final int seatCount; // used when isHost creates a brand-new room
+  final String? roomId; // required when joining an existing room
   final String? hostName;
-  final String? viewers;
-  const LiveScreen(
-      {super.key, required this.isHost, this.hostName, this.viewers});
+  const LiveScreen({
+    super.key,
+    required this.isHost,
+    this.seatCount = 15,
+    this.roomId,
+    this.hostName,
+  });
 
   @override
   State<LiveScreen> createState() => _LiveScreenState();
@@ -44,66 +50,131 @@ const List<Map<String, dynamic>> kGifts = [
 
 class _LiveScreenState extends State<LiveScreen> {
   final _agora = AgoraService();
+  final _firestore = FirestoreService();
   final _chatCtrl = TextEditingController();
   final List<_ChatLine> _chat = [];
   final List<_FlyingGift> _flyingGifts = [];
 
-  Timer? _mockTimer;
+  String? _roomId;
+  int? _mySeatIndex;
+  bool _micMuted = false;
+  bool _connecting = true;
+
   String? _selectedGift;
   bool _giftTrayOpen = false;
-  bool _showAdminEffect = false;
-  int _viewerCount = 128;
 
   @override
   void initState() {
     super.initState();
-    // Channel name would normally be the room/session id from your backend.
-    final channel = 'room_${widget.hostName ?? 'self'}';
-    _connectToLive(channel);
-
-    // _mockTimer = Timer.periodic(const Duration(seconds: 3), (_) => _mockActivity());
-
-    if (!widget.isHost && AppState.instance.adminMode) {
-      Future.delayed(const Duration(milliseconds: 800), _triggerAdminEffect);
+    if (widget.isHost) {
+      _createRoomAndJoin();
+    } else {
+      _roomId = widget.roomId;
+      _joinAsListener();
     }
   }
 
-  Future<void> _connectToLive(String channel) async {
-  try {
-    await _agora.joinChannel(channel: channel, isHost: widget.isHost);
-    if (mounted) setState(() {});
-  } catch (e) {
-    _addChat('System', 'Could not connect: $e', false);
+  Future<void> _createRoomAndJoin() async {
+    try {
+      final uid = AppState.instance.uid;
+      final name = AppState.instance.nickname.isNotEmpty
+          ? AppState.instance.nickname
+          : 'Host';
+      final id = await _firestore.createRoom(
+        hostUid: uid,
+        hostName: name,
+        seatCount: widget.seatCount,
+      );
+      await _agora.joinChannel(channel: id, isHost: true);
+      if (!mounted) return;
+      setState(() {
+        _roomId = id;
+        _mySeatIndex = 0;
+        _connecting = false;
+      });
+    } catch (e) {
+      _addChat('System', 'Could not start room: $e', false);
+      if (mounted) setState(() => _connecting = false);
+    }
   }
-}
+
+  Future<void> _joinAsListener() async {
+    if (_roomId == null) {
+      if (mounted) setState(() => _connecting = false);
+      return;
+    }
+    try {
+      await _firestore.incrementViewers(_roomId!, 1);
+      await _agora.joinChannel(channel: _roomId!, isHost: false);
+    } catch (e) {
+      _addChat('System', 'Could not connect: $e', false);
+    } finally {
+      if (mounted) setState(() => _connecting = false);
+    }
+  }
 
   @override
   void dispose() {
-    _mockTimer?.cancel();
+    if (_roomId != null) {
+      if (widget.isHost) {
+        _firestore.endRoom(_roomId!);
+      } else {
+        _firestore.incrementViewers(_roomId!, -1);
+        if (_mySeatIndex != null) {
+          _firestore.leaveSeat(_roomId!, _mySeatIndex!);
+        }
+      }
+    }
     _agora.leaveChannel();
     super.dispose();
   }
 
   void _addChat(String user, String text, bool isGift) {
+    if (!mounted) return;
     setState(() {
       _chat.add(_ChatLine(user, text, isGift));
       if (_chat.length > 10) _chat.removeAt(0);
     });
   }
 
-  void _mockActivity() {
-    const users = ['Hamza', 'Iqra', 'Usman', 'Fatima', 'Ali_92', 'Noor'];
-    const msgs = [
-      'Assalam o Alaikum!',
-      'Hey everyone!',
-      'Nice stream 🔥',
-      'Audio is crystal clear',
-      '👏👏👏'
-    ];
-    final rnd = Random();
-    _addChat(users[rnd.nextInt(users.length)], msgs[rnd.nextInt(msgs.length)],
-        false);
-    setState(() => _viewerCount = 120 + rnd.nextInt(40));
+  Future<void> _onSeatTap(int index, Map<String, dynamic>? seatData) async {
+    if (_roomId == null) return;
+    final uid = AppState.instance.uid;
+
+    // Tapping your own seat lets you stand back up.
+    if (seatData != null && seatData['uid'] == uid) {
+      await _firestore.leaveSeat(_roomId!, index);
+      await _agora.setSpeakingRole(false);
+      if (mounted) setState(() => _mySeatIndex = null);
+      return;
+    }
+
+    if (seatData != null) {
+      _snack('Seat already taken');
+      return;
+    }
+
+    if (_mySeatIndex != null) {
+      _snack('Leave your current seat first');
+      return;
+    }
+
+    final name = AppState.instance.nickname.isNotEmpty
+        ? AppState.instance.nickname
+        : 'Guest';
+    await _firestore.takeSeat(_roomId!, index, uid, name);
+    await _agora.setSpeakingRole(true);
+    if (mounted) setState(() => _mySeatIndex = index);
+    _addChat('System', '$name joined the seat 🎙', false);
+  }
+
+  Future<void> _toggleMic() async {
+    final newMuted = !_micMuted;
+    setState(() => _micMuted = newMuted);
+    await _agora.toggleMic(newMuted);
+    if (_roomId != null && _mySeatIndex != null) {
+      await _firestore.toggleSeatMute(_roomId!, _mySeatIndex!, newMuted);
+    }
   }
 
   void _sendGift() {
@@ -135,183 +206,47 @@ class _LiveScreenState extends State<LiveScreen> {
     });
   }
 
-  void _triggerAdminEffect() {
-    setState(() => _showAdminEffect = true);
-    _addChat('System', '👑 Admin joined the live!', true);
-    Future.delayed(const Duration(milliseconds: 4200), () {
-      if (mounted) setState(() => _showAdminEffect = false);
-    });
-  }
-
   void _snack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+  Future<void> _endOrLeave() async {
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0B0714),
       body: Stack(
         children: [
-          // video surface
-          Positioned.fill(child: _buildVideoSurface()),
-
-          // top bar: host chip + close
-          Positioned(
-            top: 14,
-            left: 14,
-            right: 14,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(5, 5, 10, 5),
-                  decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(.45),
-                      borderRadius: BorderRadius.circular(999)),
-                  child: Row(
-                    children: [
-                      Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: const BoxDecoration(
-                              gradient: LinearGradient(
-                                  colors: [AppColors.hot, Color(0xFF7A1BFF)]),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          if (_showAdminEffect)
-                            Positioned.fill(
-                              child: _RotatingAura(),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(width: 8),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.isHost
-                                ? (AppState.instance.nickname.isNotEmpty
-                                    ? AppState.instance.nickname
-                                    : 'You (Host)')
-                                : (widget.hostName ?? 'Host'),
-                            style: const TextStyle(
-                                fontSize: 12.5, fontWeight: FontWeight.bold),
-                          ),
-                          Text('● $_viewerCount viewers',
-                              style: const TextStyle(
-                                  fontSize: 10.5, color: AppColors.cyan)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(.45),
-                        shape: BoxShape.circle),
-                    alignment: Alignment.center,
-                    child:
-                        const Icon(Icons.close, size: 16, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // admin gold pulsing border
-          if (_showAdminEffect)
-            IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.gold, width: 3),
-                ),
-              ),
-            ),
-
-          // admin rising coin
-          if (_showAdminEffect) const _RisingCoin(),
-
-          // chat area
-          Positioned(
-            left: 0,
-            bottom: 78,
-            width: MediaQuery.of(context).size.width * .68,
-            height: MediaQuery.of(context).size.height * .32,
-            child: ListView(
-              reverse: true,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              children: _chat.reversed.map((c) => _chatBubble(c)).toList(),
-            ),
-          ),
-
-          // flying gifts
-          ..._flyingGifts.map((g) => _FlyingGiftWidget(gift: g)),
-
-          // bottom bar
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
+          Positioned.fill(
             child: Container(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [Colors.black54, Colors.transparent]),
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF1B0E2B), Color(0xFF0B0714)],
+                ),
               ),
-              child: Row(
+            ),
+          ),
+
+          if (_connecting || _roomId == null)
+            const Center(child: CircularProgressIndicator())
+          else
+            SafeArea(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _chatCtrl,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                      decoration: InputDecoration(
-                        hintText: 'Type a message...',
-                        hintStyle: const TextStyle(color: Colors.white70),
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(.08),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 14),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(999),
-                            borderSide: BorderSide.none),
-                      ),
-                      onSubmitted: (val) {
-                        if (val.trim().isEmpty) return;
-                        _addChat('You', val.trim(), false);
-                        _chatCtrl.clear();
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => setState(() => _giftTrayOpen = true),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                              colors: [AppColors.hot, Color(0xFFFF6B9D)]),
-                          shape: BoxShape.circle),
-                      alignment: Alignment.center,
-                      child: const Text('🎁'),
-                    ),
-                  ),
+                  _topBar(),
+                  Expanded(child: _seatsArea()),
+                  _chatArea(),
+                  _bottomInputBar(),
                 ],
               ),
             ),
-          ),
 
-          // gift tray
+          ..._flyingGifts.map((g) => _FlyingGiftWidget(gift: g)),
+
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             left: 0,
@@ -324,34 +259,135 @@ class _LiveScreenState extends State<LiveScreen> {
     );
   }
 
-  Widget _buildVideoSurface() {
-    if (widget.isHost && _agora.engine != null) {
-      return AgoraVideoView(
-        controller: VideoViewController(
-          rtcEngine: _agora.engine!,
-          canvas: const VideoCanvas(uid: 0),
-        ),
-      );
-    }
-    // Viewer surface would use VideoViewController.remote() once you track
-    // the remote uid from onUserJoined — placeholder shown until then.
-    return Container(
-      color: const Color(0xFF050508),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget _topBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(widget.isHost ? '📷' : '🎥',
-              style: const TextStyle(fontSize: 34)),
-          const SizedBox(height: 8),
-          Text(
-            widget.isHost
-                ? 'Connecting camera…'
-                : '${widget.hostName ?? 'Host'} is broadcasting live',
-            style: const TextStyle(color: AppColors.muted, fontSize: 13),
-            textAlign: TextAlign.center,
+          Container(
+            padding: const EdgeInsets.fromLTRB(5, 5, 10, 5),
+            decoration: BoxDecoration(
+                color: Colors.black.withOpacity(.45),
+                borderRadius: BorderRadius.circular(999)),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: const BoxDecoration(
+                    gradient:
+                        LinearGradient(colors: [AppColors.hot, Color(0xFF7A1BFF)]),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: const Text('🎙', style: TextStyle(fontSize: 13)),
+                ),
+                const SizedBox(width: 8),
+                StreamBuilder<DocumentSnapshot>(
+                  stream: _firestore.roomDoc(_roomId!),
+                  builder: (context, snap) {
+                    final data = snap.data?.data() as Map<String, dynamic>?;
+                    final hostName =
+                        data?['hostName'] ?? widget.hostName ?? 'Host';
+                    final viewers = data?['viewers'] ?? 0;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(hostName,
+                            style: const TextStyle(
+                                fontSize: 12.5, fontWeight: FontWeight.bold)),
+                        Text('● $viewers listening',
+                            style: const TextStyle(
+                                fontSize: 10.5, color: AppColors.cyan)),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: _toggleMic,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(.45),
+                      shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: Icon(_micMuted ? Icons.mic_off : Icons.mic,
+                      size: 16,
+                      color: _micMuted ? Colors.redAccent : Colors.white),
+                ),
+              ),
+              GestureDetector(
+                onTap: _endOrLeave,
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(.45),
+                      shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child:
+                      const Icon(Icons.close, size: 16, color: Colors.white),
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _seatsArea() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _firestore.roomDoc(_roomId!),
+      builder: (context, snap) {
+        if (!snap.hasData || !(snap.data?.exists ?? false)) {
+          return const Center(
+              child: Text('Room ended', style: TextStyle(color: AppColors.muted)));
+        }
+        final data = snap.data!.data() as Map<String, dynamic>;
+        final seats = List<dynamic>.from(data['seats'] ?? []);
+
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 5,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 10,
+            childAspectRatio: .78,
+          ),
+          itemCount: seats.length,
+          itemBuilder: (context, i) {
+            final seatData = seats[i] == null
+                ? null
+                : Map<String, dynamic>.from(seats[i] as Map);
+            return _SeatWidget(
+              index: i,
+              seat: seatData,
+              isMe: seatData != null &&
+                  seatData['uid'] == AppState.instance.uid,
+              onTap: () => _onSeatTap(i, seatData),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _chatArea() {
+    return SizedBox(
+      height: 130,
+      child: ListView(
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        children: _chat.reversed.map((c) => _chatBubble(c)).toList(),
       ),
     );
   }
@@ -380,6 +416,51 @@ class _LiveScreenState extends State<LiveScreen> {
             TextSpan(text: c.text),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _bottomInputBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _chatCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Type a message...',
+                hintStyle: const TextStyle(color: Colors.white70),
+                filled: true,
+                fillColor: Colors.white.withOpacity(.08),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(999),
+                    borderSide: BorderSide.none),
+              ),
+              onSubmitted: (val) {
+                if (val.trim().isEmpty) return;
+                _addChat('You', val.trim(), false);
+                _chatCtrl.clear();
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => setState(() => _giftTrayOpen = true),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                  gradient:
+                      LinearGradient(colors: [AppColors.hot, Color(0xFFFF6B9D)]),
+                  shape: BoxShape.circle),
+              alignment: Alignment.center,
+              child: const Text('🎁'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -467,6 +548,82 @@ class _LiveScreenState extends State<LiveScreen> {
   }
 }
 
+class _SeatWidget extends StatelessWidget {
+  final int index;
+  final Map<String, dynamic>? seat;
+  final bool isMe;
+  final VoidCallback onTap;
+  const _SeatWidget({
+    required this.index,
+    required this.seat,
+    required this.isMe,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final occupied = seat != null;
+    final name = seat?['name'] as String?;
+    final isMuted = seat?['isMuted'] == true;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: occupied
+                  ? const LinearGradient(
+                      colors: [AppColors.hot, Color(0xFF7A1BFF)])
+                  : null,
+              color: occupied ? null : Colors.white.withOpacity(.06),
+              border: Border.all(
+                color: isMe
+                    ? AppColors.gold
+                    : (occupied ? Colors.transparent : AppColors.line),
+                width: isMe ? 2 : 1,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: occupied
+                ? Text(
+                    name != null && name.isNotEmpty
+                        ? name[0].toUpperCase()
+                        : '?',
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white),
+                  )
+                : const Icon(Icons.add, size: 18, color: AppColors.muted),
+          ),
+          const SizedBox(height: 3),
+          if (occupied)
+            Icon(isMuted ? Icons.mic_off : Icons.mic,
+                size: 11, color: isMuted ? Colors.redAccent : AppColors.cyan)
+          else
+            Text('Seat ${index + 1}',
+                style: const TextStyle(fontSize: 8, color: AppColors.muted)),
+          if (occupied)
+            SizedBox(
+              width: 50,
+              child: Text(
+                name ?? '',
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 9, color: Colors.white70),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FlyingGiftWidget extends StatefulWidget {
   final _FlyingGift gift;
   const _FlyingGiftWidget({required this.gift});
@@ -507,97 +664,6 @@ class _FlyingGiftWidgetState extends State<_FlyingGiftWidget>
           child: Opacity(
             opacity: opacity.clamp(0, 1),
             child: Text(widget.gift.icon, style: const TextStyle(fontSize: 34)),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _RotatingAura extends StatefulWidget {
-  @override
-  State<_RotatingAura> createState() => _RotatingAuraState();
-}
-
-class _RotatingAuraState extends State<_RotatingAura>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1600))
-      ..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return RotationTransition(
-      turns: _ctrl,
-      child: Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: SweepGradient(colors: [
-            AppColors.gold,
-            Colors.transparent,
-            AppColors.gold,
-            Colors.transparent
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-class _RisingCoin extends StatefulWidget {
-  const _RisingCoin();
-  @override
-  State<_RisingCoin> createState() => _RisingCoinState();
-}
-
-class _RisingCoinState extends State<_RisingCoin>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1900))
-      ..forward();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final h = MediaQuery.of(context).size.height;
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, _) {
-        final t = _ctrl.value;
-        final opacity = t < 0.15 ? t / 0.15 : (t > 0.85 ? (1 - t) / 0.15 : 1.0);
-        return Positioned(
-          bottom: 100 + t * (h * 0.4),
-          left: 0,
-          right: 0,
-          child: Opacity(
-            opacity: opacity.clamp(0, 1),
-            child: Transform.rotate(
-              angle: t * 10,
-              child: const Center(
-                  child: Text('🪙', style: TextStyle(fontSize: 40))),
-            ),
           ),
         );
       },
