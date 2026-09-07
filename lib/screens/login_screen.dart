@@ -209,7 +209,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  @override
+    @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
@@ -223,7 +223,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   height: 64,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                        colors: [AppColors.hot, Color(0xFF7A1BFF)]),
+                      colors: [AppColors.hot, Color(0xFF7A1BFF)],
+                    ),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   alignment: Alignment.center,
@@ -231,16 +232,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 14),
                 const Text('Sitara Live',
-                    style:
-                        TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 const Text('Go live, connect, and send gifts',
                     style: TextStyle(color: AppColors.muted, fontSize: 13)),
                 const SizedBox(height: 20),
                 Container(
                   decoration: BoxDecoration(
-                      color: AppColors.surface,
-                      borderRadius: BorderRadius.circular(12)),
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   padding: const EdgeInsets.all(4),
                   child: Row(
                     children: [
@@ -281,26 +282,28 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 14),
                 _label('Password *'),
-    TextField(
-      controller: _passwordCtrl,
-      obscureText: _obscurePassword,
-      decoration: InputDecoration(
-        hintText: 'Enter password',
-        suffixIcon: IconButton(
-          icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
-          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-        ),
-      ),
-    ),
-                    
+                TextField(
+                  controller: _passwordCtrl,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    hintText: 'Enter password',
+                    suffixIcon: IconButton(
+                      icon: Icon(_obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
-                    const SizedBox(height: 14),
-                    if (_isSignup) ...[
-                      _label('Username'),
-                      TextField(
-                        controller: _usernameCtrl,
-                        decoration: const InputDecoration(hintText: 'Enter Username'),
-                      ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                if (_isSignup) ...[
+                  _label('Username'),
+                  TextField(
+                    controller: _usernameCtrl,
+                    decoration:
+                        const InputDecoration(hintText: 'Enter Username'),
+                  ),
                   const SizedBox(height: 14),
                 ],
                 const SizedBox(height: 6),
@@ -324,9 +327,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                    'By continuing you agree to our Terms & Privacy Policy',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                  'By continuing you agree to our Terms & Privacy Policy',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.muted, fontSize: 11),
+                ),
               ],
             ),
           ),
@@ -341,15 +345,15 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: active ? AppColors.hot : Colors.transparent,
+          color: active ? AppColors.hot : Colors.black,
           borderRadius: BorderRadius.circular(9),
         ),
         alignment: Alignment.center,
         child: Text(label,
-            style: TextStyle(
+            style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: active ? Colors.white : AppColors.muted)),
+                color: Colors.white)),
       ),
     );
   }
@@ -366,4 +370,3 @@ class _LoginScreenState extends State<LoginScreen> {
                   letterSpacing: .5)),
         ),
       );
-}
