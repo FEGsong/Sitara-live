@@ -8,15 +8,6 @@ import 'wallet_screen.dart';
 import 'profile_screen.dart';
 import 'inbox_screen.dart';
 
-/// Mock list of currently-live hosts — swap for a real Firestore query
-/// (e.g. "rooms" collection where status == 'live') once the backend exists.
-final List<Map<String, dynamic>> mockLiveHosts = [
-  {'name': 'Ayesha_Live', 'tag': 'Music & Chill', 'viewers': '1.2k', 'c1': const Color(0xFFFF2E6B), 'c2': const Color(0xFF7A1BFF)},
-  {'name': 'Bilal_Talks', 'tag': 'Just Chatting', 'viewers': '845', 'c1': const Color(0xFF2DE8C4), 'c2': const Color(0xFF12707F)},
-  {'name': 'Sana_Vlogs', 'tag': 'Cooking Live', 'viewers': '2.4k', 'c1': const Color(0xFFFFC93C), 'c2': const Color(0xFFB5641A)},
-  {'name': 'Zain_Gaming', 'tag': 'PUBG Live', 'viewers': '3.1k', 'c1': const Color(0xFF7A1BFF), 'c2': const Color(0xFFFF2E6B)},
-];
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -63,6 +54,54 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _HomeTab extends StatelessWidget {
+  final _firestore = FirestoreService();
+
+  void _pickSeatsAndGoLive(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        const seatOptions = [15, 25, 50, 100];
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Choose Room Size',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              const Text('How many seats should this voice room have?',
+                  style: TextStyle(color: AppColors.muted, fontSize: 12)),
+              const SizedBox(height: 18),
+              ...seatOptions.map((count) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  LiveScreen(isHost: true, seatCount: count),
+                            ),
+                          );
+                        },
+                        child: Text('$count Seats'),
+                      ),
+                    ),
+                  )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
@@ -94,15 +133,13 @@ class _HomeTab extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Start Your Live Stream', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text('Start a Voice Room', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
-                  const Text('Turn on your camera and mic to start broadcasting — viewers can send you gifts.',
+                  const Text('Pick a room size and go live — listeners can join, take a seat, and send gifts.',
                       style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
                   const SizedBox(height: 14),
                   ElevatedButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const LiveScreen(isHost: true)),
-                    ),
+                    onPressed: () => _pickSeatsAndGoLive(context),
                     child: const Text('🔴 Go Live'),
                   ),
                 ],
@@ -117,19 +154,51 @@ class _HomeTab extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.bold, letterSpacing: .8)),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: .82,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, i) {
-                final h = mockLiveHosts[i];
-                return _LiveCard(host: h);
-              },
-              childCount: mockLiveHosts.length,
-            ),
+        SliverToBoxAdapter(
+          child: StreamBuilder<List<Map<String, dynamic>>>(
+            stream: _firestore.liveRooms(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 60),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              final rooms = snapshot.data ?? [];
+
+              if (rooms.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 50, horizontal: 16),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.mic_none_outlined, size: 40, color: AppColors.muted),
+                        SizedBox(height: 10),
+                        Text('No one is live right now',
+                            style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                        SizedBox(height: 4),
+                        Text('Be the first — tap Go Live above!',
+                            style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: .82,
+                  ),
+                  itemCount: rooms.length,
+                  itemBuilder: (context, i) => _LiveCard(room: rooms[i]),
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -138,14 +207,25 @@ class _HomeTab extends StatelessWidget {
 }
 
 class _LiveCard extends StatelessWidget {
-  final Map<String, dynamic> host;
-  const _LiveCard({required this.host});
+  final Map<String, dynamic> room;
+  const _LiveCard({required this.room});
 
   @override
   Widget build(BuildContext context) {
+    final c1 = Color(room['c1'] ?? 0xFF7A1BFF);
+    final c2 = Color(room['c2'] ?? 0xFFFF2E6B);
+    final seats = List<dynamic>.from(room['seats'] ?? []);
+    final seatedCount = seats.where((s) => s != null).length;
+
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => LiveScreen(isHost: false, hostName: host['name'], viewers: host['viewers'])),
+        MaterialPageRoute(
+          builder: (_) => LiveScreen(
+            isHost: false,
+            roomId: room['id'],
+            hostName: room['hostName'] ?? 'Host',
+          ),
+        ),
       ),
       child: Container(
         decoration: BoxDecoration(
@@ -161,7 +241,7 @@ class _LiveCard extends StatelessWidget {
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [host['c1'], host['c2']]),
+                  gradient: LinearGradient(colors: [c1, c2]),
                 ),
                 padding: const EdgeInsets.all(8),
                 child: Stack(
@@ -179,7 +259,7 @@ class _LiveCard extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(color: Colors.black.withOpacity(.5), borderRadius: BorderRadius.circular(6)),
-                        child: Text('👁 ${host['viewers']}', style: const TextStyle(fontSize: 10)),
+                        child: Text('🎙 $seatedCount/${room['seatCount'] ?? seats.length}', style: const TextStyle(fontSize: 10)),
                       ),
                     ),
                   ],
@@ -191,8 +271,8 @@ class _LiveCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(host['name'], style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  Text(host['tag'], style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+                  Text(room['hostName'] ?? 'Host', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Text('Voice Room', style: TextStyle(fontSize: 11, color: AppColors.muted)),
                 ],
               ),
             ),
