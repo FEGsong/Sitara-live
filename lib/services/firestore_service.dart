@@ -4,9 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Firestore directly — makes it easy to swap the backend later.
 class FirestoreService {
   final _db = FirebaseFirestore.instance;
-
   CollectionReference get _users => _db.collection('users');
   CollectionReference get _requests => _db.collection('coin_requests');
+  CollectionReference get _rooms => _db.collection('rooms');
 
   /// Called right after signup to create the user's profile document.
   Future<void> createUserProfile({
@@ -83,7 +83,6 @@ class FirestoreService {
       _users.doc(uid).update({'isAdmin': false});
 
   // ---- Coin purchase requests (manually approved by the owner) ----
-
   Future<void> submitCoinRequest({
     required String uid,
     required String phone,
@@ -118,4 +117,105 @@ class FirestoreService {
     batch.update(_users.doc(uid), {'coins': FieldValue.increment(coins)});
     await batch.commit();
   }
+
+  // ---- Audio rooms (voice-call live rooms with seats) ----
+
+  /// Creates a new live audio room with the given number of seats
+  /// (15 / 25 / 50 / 100) and automatically seats the host at seat 0.
+  Future<String> createRoom({
+    required String hostUid,
+    required String hostName,
+    required int seatCount,
+  }) async {
+    final gradient = _randomGradient();
+    final doc = await _rooms.add({
+      'hostUid': hostUid,
+      'hostName': hostName,
+      'seatCount': seatCount,
+      'seats': List<dynamic>.filled(seatCount, null),
+      'status': 'live',
+      'viewers': 0,
+      'c1': gradient[0],
+      'c2': gradient[1],
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await takeSeat(doc.id, 0, hostUid, hostName);
+    return doc.id;
+  }
+
+  List<int> _randomGradient() {
+    const options = [
+      [0xFFFF2E6B, 0xFF7A1BFF],
+      [0xFF2DE8C4, 0xFF12707F],
+      [0xFFFFC93C, 0xFFB5641A],
+      [0xFF7A1BFF, 0xFFFF2E6B],
+    ];
+    options.shuffle();
+    return options.first;
+  }
+
+  /// Live rooms only — used on the Home screen "LIVE NOW" section.
+  Stream<List<Map<String, dynamic>>> liveRooms() {
+    return _rooms.where('status', isEqualTo: 'live').snapshots().map(
+          (snap) => snap.docs
+              .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+              .toList(),
+        );
+  }
+
+  Stream<DocumentSnapshot> roomDoc(String roomId) =>
+      _rooms.doc(roomId).snapshots();
+
+  Future<void> takeSeat(
+      String roomId, int seatIndex, String uid, String name) async {
+    final ref = _rooms.doc(roomId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final seats = List<dynamic>.from(data['seats'] ?? []);
+      if (seatIndex < 0 || seatIndex >= seats.length) return;
+      if (seats[seatIndex] != null) return; // already taken
+      seats[seatIndex] = {'uid': uid, 'name': name, 'isMuted': false};
+      tx.update(ref, {'seats': seats});
+    });
+  }
+
+  Future<void> leaveSeat(String roomId, int seatIndex) async {
+    final ref = _rooms.doc(roomId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final seats = List<dynamic>.from(data['seats'] ?? []);
+      if (seatIndex < 0 || seatIndex >= seats.length) return;
+      seats[seatIndex] = null;
+      tx.update(ref, {'seats': seats});
+    });
+  }
+
+  Future<void> toggleSeatMute(
+      String roomId, int seatIndex, bool isMuted) async {
+    final ref = _rooms.doc(roomId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final seats = List<dynamic>.from(data['seats'] ?? []);
+      if (seatIndex < 0 || seatIndex >= seats.length) return;
+      final seat = seats[seatIndex];
+      if (seat == null) return;
+      seats[seatIndex] = {
+        ...Map<String, dynamic>.from(seat),
+        'isMuted': isMuted,
+      };
+      tx.update(ref, {'seats': seats});
+    });
+  }
+
+  Future<void> incrementViewers(String roomId, int delta) =>
+      _rooms.doc(roomId).update({'viewers': FieldValue.increment(delta)});
+
+  Future<void> endRoom(String roomId) =>
+      _rooms.doc(roomId).update({'status': 'ended'});
 }
