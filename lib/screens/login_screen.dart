@@ -40,12 +40,12 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       if (_isSignup) {
         final cred = await _auth.signUp(
-  phone: _fullPhone(),
-  password: password,
-  username: _usernameCtrl.text.trim(),
-).timeout(const Duration(seconds: 15), onTimeout: () {
-  throw Exception('Request timed out — check your internet connection');
-});
+          phone: _fullPhone(),
+          password: password,
+          username: _usernameCtrl.text.trim(),
+        ).timeout(const Duration(seconds: 15), onTimeout: () {
+          throw Exception('Request timed out — check your internet connection');
+        });
         AppState.instance.uid = cred.user!.uid;
       } else {
         final cred =
@@ -57,23 +57,37 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
-   } on FirebaseAuthException catch (e) {
-  if (mounted) {
-    showDialog(context: context, builder: (_) => AlertDialog(
-      title: const Text('Firebase Auth Error'),
-      content: Text('${e.code}\n\n${e.message}'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-    ));
-  }
-} catch (e) {
-  if (mounted) {
-    showDialog(context: context, builder: (_) => AlertDialog(
-      title: const Text('Error'),
-      content: Text('$e'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-    ));
-  }
-} finally {
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Firebase Auth Error'),
+            content: Text('${e.code}\n\n${e.message}'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'))
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Error'),
+            content: Text('$e'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'))
+            ],
+          ),
+        );
+      }
+    } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -94,7 +108,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   void _openForgotPassword() {
@@ -133,16 +148,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     otpSent
                         ? 'Enter the code sent to your phone, then set a new password'
                         : 'Enter your phone number — we will send you a verification code',
-                    style:
-                        const TextStyle(color: AppColors.muted, fontSize: 12),
+                    style: const TextStyle(color: AppColors.muted, fontSize: 12),
                   ),
                   const SizedBox(height: 16),
                   if (!otpSent) ...[
                     TextField(
                       controller: resetPhoneCtrl,
                       keyboardType: TextInputType.phone,
-                      decoration:
-                          const InputDecoration(hintText: '+92 3XX XXXXXXX'),
+                      decoration: const InputDecoration(
+                          hintText: '+92 3XX XXXXXXX'),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -165,7 +179,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   },
                                 );
                               },
-                        child: Text(sending ? 'Sending...' : 'Send Code'),
+                        child:
+                            Text(sending ? 'Sending...' : 'Send Code'),
                       ),
                     ),
                   ] else ...[
@@ -209,7 +224,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-    @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
@@ -228,11 +243,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   alignment: Alignment.center,
-                  child: Image.asset('assets/images/logo.png', width: 60, height: 60),
+                  child: Image.asset('assets/images/logo.png',
+                      width: 60, height: 60),
                 ),
                 const SizedBox(height: 14),
                 const Text('Sitara Live',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                    style:
+                        TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 const Text('Go live, connect, and send gifts',
                     style: TextStyle(color: AppColors.muted, fontSize: 13)),
@@ -370,3 +387,4 @@ class _LoginScreenState extends State<LoginScreen> {
                   letterSpacing: .5)),
         ),
       );
+}
