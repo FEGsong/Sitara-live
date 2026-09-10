@@ -11,8 +11,10 @@ import '../widgets/coin_pill.dart';
 class LiveScreen extends StatefulWidget {
   final bool isHost;
   final int seatCount; // used when isHost creates a brand-new room
-  final String? roomId; // required when joining an existing room
+  final String? roomId; // required when joining an existing room,
+  // or when a host is rejoining their own already-live room
   final String? hostName;
+
   const LiveScreen({
     super.key,
     required this.isHost,
@@ -67,7 +69,11 @@ class _LiveScreenState extends State<LiveScreen> {
   void initState() {
     super.initState();
     if (widget.isHost) {
-      _createRoomAndJoin();
+      if (widget.roomId != null) {
+        _rejoinAsHost();
+      } else {
+        _createRoomAndJoin();
+      }
     } else {
       _roomId = widget.roomId;
       _joinAsListener();
@@ -98,12 +104,40 @@ class _LiveScreenState extends State<LiveScreen> {
     }
   }
 
+  /// Host tapped "My Room" on Home to jump back into their still-live
+  /// room instead of creating a new one.
+  Future<void> _rejoinAsHost() async {
+    try {
+      _roomId = widget.roomId;
+      await _agora.joinChannel(channel: _roomId!, isHost: true);
+      if (!mounted) return;
+      setState(() {
+        _mySeatIndex = 0;
+        _connecting = false;
+      });
+    } catch (e) {
+      _addChat('System', 'Could not rejoin room: $e', false);
+      if (mounted) setState(() => _connecting = false);
+    }
+  }
+
   Future<void> _joinAsListener() async {
     if (_roomId == null) {
       if (mounted) setState(() => _connecting = false);
       return;
     }
     try {
+      final snap = await _firestore.getRoomOnce(_roomId!);
+      final data = snap.data() as Map<String, dynamic>?;
+      if (data != null) {
+        _firestore.recordRecentRoom(
+          uid: AppState.instance.uid,
+          roomId: _roomId!,
+          hostName: data['hostName'] ?? widget.hostName ?? 'Host',
+          c1: data['c1'] ?? 0xFF7A1BFF,
+          c2: data['c2'] ?? 0xFFFF2E6B,
+        );
+      }
       await _firestore.incrementViewers(_roomId!, 1);
       await _agora.joinChannel(channel: _roomId!, isHost: false);
     } catch (e) {
@@ -141,7 +175,6 @@ class _LiveScreenState extends State<LiveScreen> {
     if (_roomId == null) return;
     final uid = AppState.instance.uid;
 
-    // Tapping your own seat lets you stand back up.
     if (seatData != null && seatData['uid'] == uid) {
       await _firestore.leaveSeat(_roomId!, index);
       await _agora.setSpeakingRole(false);
@@ -230,7 +263,6 @@ class _LiveScreenState extends State<LiveScreen> {
               ),
             ),
           ),
-
           if (_connecting || _roomId == null)
             const Center(child: CircularProgressIndicator())
           else
@@ -244,9 +276,7 @@ class _LiveScreenState extends State<LiveScreen> {
                 ],
               ),
             ),
-
           ..._flyingGifts.map((g) => _FlyingGiftWidget(gift: g)),
-
           AnimatedPositioned(
             duration: const Duration(milliseconds: 250),
             left: 0,
@@ -553,6 +583,7 @@ class _SeatWidget extends StatelessWidget {
   final Map<String, dynamic>? seat;
   final bool isMe;
   final VoidCallback onTap;
+
   const _SeatWidget({
     required this.index,
     required this.seat,
