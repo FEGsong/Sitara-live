@@ -15,6 +15,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _auth = AuthService();
   final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
 
@@ -25,10 +26,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _submit() async {
     final phone = _phoneCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text.trim();
 
     if (phone.isEmpty) {
       _toast('Phone number is required');
+      return;
+    }
+    if (_isSignup && email.isEmpty) {
+      _toast('Email is required — used to reset your password later');
       return;
     }
     if (password.isEmpty) {
@@ -39,11 +45,14 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _loading = true);
     try {
       if (_isSignup) {
-        final cred = await _auth.signUp(
-          phone: _fullPhone(),
-          password: password,
-          username: _usernameCtrl.text.trim(),
-        ).timeout(const Duration(seconds: 15), onTimeout: () {
+        final cred = await _auth
+            .signUp(
+              phone: _fullPhone(),
+              email: email,
+              password: password,
+              username: _usernameCtrl.text.trim(),
+            )
+            .timeout(const Duration(seconds: 15), onTimeout: () {
           throw Exception('Request timed out — check your internet connection');
         });
         AppState.instance.uid = cred.user!.uid;
@@ -63,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Firebase Auth Error'),
-            content: Text('${e.code}\n\n${e.message}'),
+            content: Text(_friendlyError(e)),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(context),
@@ -95,9 +104,11 @@ class _LoginScreenState extends State<LoginScreen> {
   String _friendlyError(FirebaseAuthException e) {
     switch (e.code) {
       case 'email-already-in-use':
-        return 'An account with this phone number already exists — try logging in instead';
+        return 'An account with this email already exists — try logging in instead';
       case 'weak-password':
         return 'Password should be at least 6 characters';
+      case 'invalid-email':
+        return 'Please enter a valid email address';
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
@@ -113,11 +124,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _openForgotPassword() {
-    final resetPhoneCtrl = TextEditingController();
-    final otpCtrl = TextEditingController();
-    final newPasswordCtrl = TextEditingController();
-    bool otpSent = false;
+    final resetEmailCtrl = TextEditingController();
     bool sending = false;
+    bool sent = false;
 
     showModalBottomSheet(
       context: context,
@@ -145,18 +154,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 4),
                   Text(
-                    otpSent
-                        ? 'Enter the code sent to your phone, then set a new password'
-                        : 'Enter your phone number — we will send you a verification code',
+                    sent
+                        ? 'Check your inbox for the reset link'
+                        : 'Enter the email you signed up with — we will send you a link to reset your password',
                     style: const TextStyle(color: AppColors.muted, fontSize: 12),
                   ),
                   const SizedBox(height: 16),
-                  if (!otpSent) ...[
+                  if (!sent) ...[
                     TextField(
-                      controller: resetPhoneCtrl,
-                      keyboardType: TextInputType.phone,
+                      controller: resetEmailCtrl,
+                      keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                          hintText: '+92 3XX XXXXXXX'),
+                          hintText: 'you@example.com'),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -165,53 +174,32 @@ class _LoginScreenState extends State<LoginScreen> {
                         onPressed: sending
                             ? null
                             : () async {
-                                if (resetPhoneCtrl.text.trim().isEmpty) return;
+                                final email = resetEmailCtrl.text.trim();
+                                if (email.isEmpty) return;
                                 setSheetState(() => sending = true);
-                                await _auth.sendResetOtp(
-                                  phone: resetPhoneCtrl.text.trim(),
-                                  onCodeSent: () => setSheetState(() {
+                                try {
+                                  await _auth.sendPasswordReset(email);
+                                  setSheetState(() {
                                     sending = false;
-                                    otpSent = true;
-                                  }),
-                                  onError: (err) {
-                                    setSheetState(() => sending = false);
-                                    _toast(err);
-                                  },
-                                );
+                                    sent = true;
+                                  });
+                                } on FirebaseAuthException catch (e) {
+                                  setSheetState(() => sending = false);
+                                  _toast(e.message ?? 'Could not send reset email');
+                                } catch (e) {
+                                  setSheetState(() => sending = false);
+                                  _toast('Could not send reset email');
+                                }
                               },
-                        child:
-                            Text(sending ? 'Sending...' : 'Send Code'),
+                        child: Text(sending ? 'Sending...' : 'Send Reset Link'),
                       ),
                     ),
                   ] else ...[
-                    TextField(
-                      controller: otpCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration:
-                          const InputDecoration(hintText: '6-digit code'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: newPasswordCtrl,
-                      obscureText: true,
-                      decoration:
-                          const InputDecoration(hintText: 'New password'),
-                    ),
-                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () async {
-                          final ok = await _auth.confirmOtpAndResetPassword(
-                            smsCode: otpCtrl.text.trim(),
-                            newPassword: newPasswordCtrl.text.trim(),
-                          );
-                          Navigator.pop(ctx);
-                          _toast(ok
-                              ? '✅ Password reset — you can now log in'
-                              : 'Could not verify code, please try again');
-                        },
-                        child: const Text('Reset Password'),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text('Done'),
                       ),
                     ),
                   ],
@@ -297,6 +285,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ],
                 ),
+                if (_isSignup) ...[
+                  const SizedBox(height: 14),
+                  _label('Email *'),
+                  TextField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                        hintText: 'you@example.com'),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 _label('Password *'),
                 TextField(
