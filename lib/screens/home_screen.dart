@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.bgDeep,
         indicatorColor: Colors.transparent,
         destinations: const [
-  NavigationDestination(icon: Icon(Icons.home_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.home, color: AppColors.hot), label: 'Home'),
+  NavigationDestination(icon: Icon(Icons.home_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.home, color: AppColors.hot), label: 'Party'),
   NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.account_balance_wallet, color: AppColors.hot), label: 'Wallet'),
   NavigationDestination(icon: Icon(Icons.mail_outline, color: AppColors.muted), selectedIcon: Icon(Icons.mail, color: AppColors.hot), label: 'Inbox'),
   NavigationDestination(icon: Icon(Icons.person_outline, color: AppColors.muted), selectedIcon: Icon(Icons.person, color: AppColors.hot), label: 'Profile'),
@@ -102,6 +102,26 @@ class _HomeTab extends StatelessWidget {
     );
   }
 
+  Future<void> _openRecentRoom(
+      BuildContext context, Map<String, dynamic> item) async {
+    final snap = await _firestore.getRoomOnce(item['roomId']);
+    final data = snap.data() as Map<String, dynamic>?;
+    if (data == null || data['status'] != 'live') {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This room has ended')));
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LiveScreen(
+          isHost: false,
+          roomId: item['roomId'],
+          hostName: data['hostName'] ?? item['hostName'] ?? 'Host',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
@@ -119,34 +139,160 @@ class _HomeTab extends StatelessWidget {
             ),
           ),
         ),
+
+        // ---- My Room (shows only while this user has a live room) ----
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           sliver: SliverToBoxAdapter(
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFF2A0E3D), Color(0xFF3A0F2E)]),
-                border: Border.all(color: const Color(0xFF43223F)),
-                borderRadius: BorderRadius.circular(18),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Start a Voice Room', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 6),
-                  const Text('Pick a room size and go live — listeners can join, take a seat, and send gifts.',
-                      style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
-                  const SizedBox(height: 14),
-                  ElevatedButton(
-                    onPressed: () => _pickSeatsAndGoLive(context),
-                    child: const Text('🔴 Go Live'),
-                  ),
-                ],
-              ),
+            child: StreamBuilder<Map<String, dynamic>?>(
+              stream: _firestore.myActiveRoom(state.uid),
+              builder: (context, snap) {
+                final myRoom = snap.data;
+                if (myRoom == null) {
+                  return Container(
+                    padding: const EdgeInsets.all(20),
+                    margin: const EdgeInsets.only(bottom: 20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF2A0E3D), Color(0xFF3A0F2E)]),
+                      border: Border.all(color: const Color(0xFF43223F)),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Start a Voice Room', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 6),
+                        const Text('Pick a room size and go live — listeners can join, take a seat, and send gifts.',
+                            style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+                        const SizedBox(height: 14),
+                        ElevatedButton(
+                          onPressed: () => _pickSeatsAndGoLive(context),
+                          child: const Text('🔴 Go Live'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final c1 = Color(myRoom['c1'] ?? 0xFF7A1BFF);
+                final c2 = Color(myRoom['c2'] ?? 0xFFFF2E6B);
+                final seats = List<dynamic>.from(myRoom['seats'] ?? []);
+                final seatedCount = seats.where((s) => s != null).length;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('My Room',
+                        style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.bold, letterSpacing: .8)),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => LiveScreen(
+                            isHost: true,
+                            roomId: myRoom['id'],
+                          ),
+                        ),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(colors: [c1, c2]),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(color: AppColors.hot, borderRadius: BorderRadius.circular(6)),
+                              child: const Text('LIVE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                '${myRoom['hostName'] ?? 'Your room'} — tap to rejoin',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            Text('🎙 $seatedCount/${myRoom['seatCount'] ?? seats.length}',
+                                style: const TextStyle(fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ),
+
+        // ---- Recently visited rooms ----
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          sliver: SliverToBoxAdapter(
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _firestore.recentRooms(state.uid),
+              builder: (context, snap) {
+                final items = snap.data ?? [];
+                if (items.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Recently',
+                        style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.bold, letterSpacing: .8)),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 88,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                        itemBuilder: (context, i) {
+                          final item = items[i];
+                          final c1 = Color(item['c1'] ?? 0xFF7A1BFF);
+                          final c2 = Color(item['c2'] ?? 0xFFFF2E6B);
+                          final name = item['hostName'] ?? 'Host';
+                          return GestureDetector(
+                            onTap: () => _openRecentRoom(context, item),
+                            child: Container(
+                              width: 72,
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(colors: [c1, c2]),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(name,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(fontSize: 10, color: AppColors.muted)),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+
         const SliverPadding(
           padding: EdgeInsets.symmetric(horizontal: 16),
           sliver: SliverToBoxAdapter(
