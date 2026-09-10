@@ -7,17 +7,17 @@ class FirestoreService {
   CollectionReference get _users => _db.collection('users');
   CollectionReference get _requests => _db.collection('coin_requests');
   CollectionReference get _rooms => _db.collection('rooms');
-  CollectionReference _userRecent(String uid) =>
-      _users.doc(uid).collection('recent_rooms');
 
   /// Called right after signup to create the user's profile document.
   Future<void> createUserProfile({
     required String uid,
     required String phone,
+    required String email,
     required String username,
   }) async {
     await _users.doc(uid).set({
       'phone': phone,
+      'email': email,
       'username': username,
       'nickname': username,
       'profilePublic': true,
@@ -31,6 +31,16 @@ class FirestoreService {
   }
 
   Stream<DocumentSnapshot> userDoc(String uid) => _users.doc(uid).snapshots();
+
+  /// Used at sign-in time: the login form only collects phone +
+  /// password, so we look up the account's real Firebase Auth email
+  /// from Firestore before calling signInWithEmailAndPassword.
+  Future<String?> getEmailByPhone(String phone) async {
+    final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
+    if (q.docs.isEmpty) return null;
+    final data = q.docs.first.data() as Map<String, dynamic>;
+    return data['email'] as String?;
+  }
 
   Future<void> updateProfile(String uid,
       {String? username, String? nickname, bool? profilePublic}) {
@@ -168,25 +178,6 @@ class FirestoreService {
   Stream<DocumentSnapshot> roomDoc(String roomId) =>
       _rooms.doc(roomId).snapshots();
 
-  Future<DocumentSnapshot> getRoomOnce(String roomId) =>
-      _rooms.doc(roomId).get();
-
-  /// This user's own room, only while it's still live — used to show
-  /// the "My Room" shortcut on Home so a host can jump straight back in.
-  Stream<Map<String, dynamic>?> myActiveRoom(String uid) {
-    return _rooms
-        .where('hostUid', isEqualTo: uid)
-        .where('status', isEqualTo: 'live')
-        .limit(1)
-        .snapshots()
-        .map((snap) => snap.docs.isEmpty
-            ? null
-            : {
-                'id': snap.docs.first.id,
-                ...snap.docs.first.data() as Map<String, dynamic>
-              });
-  }
-
   Future<void> takeSeat(
       String roomId, int seatIndex, String uid, String name) async {
     final ref = _rooms.doc(roomId);
@@ -239,33 +230,4 @@ class FirestoreService {
 
   Future<void> endRoom(String roomId) =>
       _rooms.doc(roomId).update({'status': 'ended'});
-
-  // ---- Recently visited rooms (per-user history) ----
-
-  /// Called whenever a user joins a room as a listener — remembers it
-  /// so it can show up under "Recently" on Home next time.
-  Future<void> recordRecentRoom({
-    required String uid,
-    required String roomId,
-    required String hostName,
-    required int c1,
-    required int c2,
-  }) {
-    return _userRecent(uid).doc(roomId).set({
-      'roomId': roomId,
-      'hostName': hostName,
-      'c1': c1,
-      'c2': c2,
-      'visitedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-
-  Stream<List<Map<String, dynamic>>> recentRooms(String uid) {
-    return _userRecent(uid)
-        .orderBy('visitedAt', descending: true)
-        .limit(10)
-        .snapshots()
-        .map((snap) =>
-            snap.docs.map((d) => d.data() as Map<String, dynamic>).toList());
-  }
 }
