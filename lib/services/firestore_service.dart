@@ -8,6 +8,8 @@ class FirestoreService {
   CollectionReference get _requests => _db.collection('coin_requests');
   CollectionReference get _rooms => _db.collection('rooms');
 
+  // ---- User profile ----
+
   /// Called right after signup to create the user's profile document.
   Future<void> createUserProfile({
     required String uid,
@@ -94,7 +96,9 @@ class FirestoreService {
   Future<void> removeAdmin(String uid) =>
       _users.doc(uid).update({'isAdmin': false});
 
-  // ---- Coin purchase requests (manually approved by the owner) ----
+  // ---- Coin purchase requests (kept for the Admin Panel; currently
+  // nothing in the app submits new ones since Buy Coins now just
+  // shows a "contact the seller" message) ----
   Future<void> submitCoinRequest({
     required String uid,
     required String phone,
@@ -178,6 +182,27 @@ class FirestoreService {
   Stream<DocumentSnapshot> roomDoc(String roomId) =>
       _rooms.doc(roomId).snapshots();
 
+  /// One-time fetch of a room — used to check whether a recent/active
+  /// room is still live before jumping the user into it.
+  Future<DocumentSnapshot> getRoomOnce(String roomId) =>
+      _rooms.doc(roomId).get();
+
+  /// Streams the current user's own still-live room (if any), so
+  /// Home can show a "My Room — tap to rejoin" card for a host who
+  /// navigated away without ending their stream.
+  Stream<Map<String, dynamic>?> myActiveRoom(String uid) {
+    return _rooms
+        .where('hostUid', isEqualTo: uid)
+        .where('status', isEqualTo: 'live')
+        .limit(1)
+        .snapshots()
+        .map((snap) {
+      if (snap.docs.isEmpty) return null;
+      final d = snap.docs.first;
+      return {'id': d.id, ...d.data() as Map<String, dynamic>};
+    });
+  }
+
   Future<void> takeSeat(
       String roomId, int seatIndex, String uid, String name) async {
     final ref = _rooms.doc(roomId);
@@ -230,4 +255,37 @@ class FirestoreService {
 
   Future<void> endRoom(String roomId) =>
       _rooms.doc(roomId).update({'status': 'ended'});
+
+  // ---- Recently visited rooms (per user) ----
+
+  CollectionReference _recentRoomsCol(String uid) =>
+      _users.doc(uid).collection('recent_rooms');
+
+  /// Called when a listener joins someone else's room, so it shows
+  /// up in their "Recently" strip on Home next time.
+  Future<void> recordRecentRoom({
+    required String uid,
+    required String roomId,
+    required String hostName,
+    required int c1,
+    required int c2,
+  }) {
+    return _recentRoomsCol(uid).doc(roomId).set({
+      'roomId': roomId,
+      'hostName': hostName,
+      'c1': c1,
+      'c2': c2,
+      'visitedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Stream<List<Map<String, dynamic>>> recentRooms(String uid) {
+    return _recentRoomsCol(uid)
+        .orderBy('visitedAt', descending: true)
+        .limit(10)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => d.data() as Map<String, dynamic>)
+            .toList());
+  }
 }
