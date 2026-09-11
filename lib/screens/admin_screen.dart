@@ -1,7 +1,16 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/firestore_service.dart';
-import 'wallet_screen.dart';
+
+/// Kept here (rather than in wallet_screen.dart) purely so the Admin
+/// Panel can show a readable payment-method name on old/legacy coin
+/// requests. The Buy Coins flow itself no longer collects a method —
+/// it just tells the user to contact the coin seller directly.
+const List<Map<String, String>> kPayMethods = [
+  {'id': 'jazzcash', 'name': 'JazzCash'},
+  {'id': 'easypaisa', 'name': 'Easypaisa'},
+  {'id': 'bank', 'name': 'Bank Transfer'},
+];
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
