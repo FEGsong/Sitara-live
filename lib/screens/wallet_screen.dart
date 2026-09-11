@@ -1,34 +1,12 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/app_state.dart';
-import '../services/firestore_service.dart';
 
 const List<Map<String, dynamic>> kPackages = [
   {'coins': 240, 'price': 'Rs 400'},
   {'coins': 480, 'price': 'Rs 800'},
   {'coins': 900, 'price': 'Rs 1,500'},
   {'coins': 1800, 'price': 'Rs 3,000'},
-];
-
-const List<Map<String, String>> kPayMethods = [
-  {
-    'id': 'jazzcash',
-    'name': 'JazzCash',
-    'sub': 'Mobile wallet',
-    'account': '0300-1234567 (Owner Account)'
-  },
-  {
-    'id': 'easypaisa',
-    'name': 'Easypaisa',
-    'sub': 'Mobile wallet',
-    'account': '0345-7654321 (Owner Account)'
-  },
-  {
-    'id': 'bank',
-    'name': 'Bank Transfer',
-    'sub': 'Direct account transfer',
-    'account': 'HBL — 1234 5678 9012 (Owner Account)'
-  },
 ];
 
 class WalletScreen extends StatefulWidget {
@@ -40,154 +18,23 @@ class WalletScreen extends StatefulWidget {
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  final _firestore = FirestoreService();
-
   void _openBuyCoins(int coins, String price) {
-    _openPaymentSheet(
-      title: 'Buy $coins Coins',
-      subtitle: 'Total: $price — choose a payment method',
-      confirmLabel: "I've Paid — Submit Request",
-      onConfirm: (method, ref) async {
-        await _firestore.submitCoinRequest(
-          uid: AppState.instance.uid,
-          phone: AppState.instance.phone,
-          coins: coins,
-          price: price,
-          method: method,
-          ref: ref,
-        );
-        _snack(
-            '✅ Request submitted — the owner will verify and add your coins');
-      },
-      showAccountInstructions: true,
-    );
-  }
-
-  void _openPaymentSheet({
-    required String title,
-    required String subtitle,
-    required String confirmLabel,
-    required void Function(String method, String ref) onConfirm,
-    required bool showAccountInstructions,
-  }) {
-    String? selectedMethod;
-    final refCtrl = TextEditingController();
-
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final method = selectedMethod != null
-                ? kPayMethods.firstWhere((m) => m['id'] == selectedMethod)
-                : null;
-            return Padding(
-              padding: EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  top: 22,
-                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 26),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(subtitle,
-                        style: const TextStyle(
-                            color: AppColors.muted, fontSize: 12)),
-                    const SizedBox(height: 16),
-                    ...kPayMethods.map((m) {
-                      final selected = selectedMethod == m['id'];
-                      return GestureDetector(
-                        onTap: () =>
-                            setSheetState(() => selectedMethod = m['id']),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                                color:
-                                    selected ? AppColors.cyan : AppColors.line),
-                            borderRadius: BorderRadius.circular(12),
-                            color: selected
-                                ? AppColors.cyan.withOpacity(.06)
-                                : null,
-                          ),
-                          child: Row(
-                            children: [
-                              Text(m['name']!,
-                                  style: const TextStyle(
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w600)),
-                              const SizedBox(width: 8),
-                              Text(m['sub']!,
-                                  style: const TextStyle(
-                                      fontSize: 10.5, color: AppColors.muted)),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                    if (showAccountInstructions && method != null)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 14),
-                        decoration: BoxDecoration(
-                          color: AppColors.gold.withOpacity(.08),
-                          border: Border.all(
-                              color: AppColors.gold.withOpacity(.35)),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          'Send your payment to:\n${method['account']}\n\nAfter paying, enter your Transaction ID below.',
-                          style: const TextStyle(fontSize: 12, height: 1.5),
-                        ),
-                      ),
-                    TextField(
-                      controller: refCtrl,
-                      decoration: const InputDecoration(
-                          hintText: 'Transaction ID / account number'),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          if (selectedMethod == null) {
-                            _snack('Please select a payment method');
-                            return;
-                          }
-                          if (refCtrl.text.trim().isEmpty) {
-                            _snack('Enter your account/transaction reference');
-                            return;
-                          }
-                          Navigator.pop(ctx);
-                          onConfirm(selectedMethod!, refCtrl.text.trim());
-                          setState(() {});
-                        },
-                        child: Text(confirmLabel),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (ctx) => AlertDialog(
+        title: const Text('Contact Coin Seller'),
+        content: Text(
+          'To buy $coins coins ($price), please contact the coin seller directly to arrange payment.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
   }
-
-  void _snack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   @override
   Widget build(BuildContext context) {
