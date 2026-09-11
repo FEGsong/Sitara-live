@@ -63,24 +63,6 @@ class _WalletScreenState extends State<WalletScreen> {
     );
   }
 
-  void _openWithdraw() {
-    if (AppState.instance.earningsPKR < 1000) {
-      _snack(
-          'Minimum withdrawal is Rs 1,000 (you have Rs ${AppState.instance.earningsPKR.toStringAsFixed(0)})');
-      return;
-    }
-    _openPaymentSheet(
-      title: 'Withdraw Rs ${AppState.instance.earningsPKR.toStringAsFixed(0)}',
-      subtitle: 'Choose where to receive the payment',
-      confirmLabel: 'Submit Withdrawal Request',
-      onConfirm: (method, ref) {
-        _snack(
-            '✅ Withdrawal request for Rs ${AppState.instance.earningsPKR.toStringAsFixed(0)} submitted');
-      },
-      showAccountInstructions: false,
-    );
-  }
-
   void _openPaymentSheet({
     required String title,
     required String subtitle,
@@ -309,15 +291,6 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
               );
             }).toList(),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-                onPressed: _openWithdraw,
-                child: const Text('Withdraw Earnings')),
           ),
         ),
       ],
