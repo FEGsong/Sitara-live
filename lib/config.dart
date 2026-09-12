@@ -2,5 +2,5 @@
 /// Update tokenServerUrl once you deploy the Node.js token server
 /// (see the agora-token-server project) to Railway/Render/etc.
 class AppConfig {
-  static const String tokenServerUrl = 'https://your-token-server.example.com';
+     static const String tokenServerUrl = 'https://sitara-live.vercel.app';
 }
