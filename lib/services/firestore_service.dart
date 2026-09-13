@@ -7,6 +7,7 @@ class FirestoreService {
   CollectionReference get _users => _db.collection('users');
   CollectionReference get _requests => _db.collection('coin_requests');
   CollectionReference get _rooms => _db.collection('rooms');
+  CollectionReference get _follows => _db.collection('follows');
 
   // ---- User profile ----
 
@@ -28,6 +29,8 @@ class FirestoreService {
       'giftsSent': 0,
       'giftsReceived': 0,
       'isAdmin': false,
+      'followersCount': 0,
+      'followingCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
@@ -287,5 +290,65 @@ class FirestoreService {
         .map((snap) => snap.docs
             .map((d) => d.data() as Map<String, dynamic>)
             .toList());
+  }
+
+  // ---- Follow / Following system ----
+
+  /// Follow-document ID is always "followerId_followingId" so we can
+  /// check/create/delete it directly without a query.
+  String _followDocId(String followerId, String followingId) =>
+      '${followerId}_$followingId';
+
+  /// Current user (followerId) starts following targetId.
+  Future<void> followUser(String followerId, String targetId) async {
+    if (followerId == targetId) return; // can't follow yourself
+    final docId = _followDocId(followerId, targetId);
+    final batch = _db.batch();
+    batch.set(_follows.doc(docId), {
+      'followerId': followerId,
+      'followingId': targetId,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(
+        _users.doc(followerId), {'followingCount': FieldValue.increment(1)});
+    batch.update(
+        _users.doc(targetId), {'followersCount': FieldValue.increment(1)});
+    await batch.commit();
+  }
+
+  /// Current user (followerId) unfollows targetId.
+  Future<void> unfollowUser(String followerId, String targetId) async {
+    final docId = _followDocId(followerId, targetId);
+    final batch = _db.batch();
+    batch.delete(_follows.doc(docId));
+    batch.update(
+        _users.doc(followerId), {'followingCount': FieldValue.increment(-1)});
+    batch.update(
+        _users.doc(targetId), {'followersCount': FieldValue.increment(-1)});
+    await batch.commit();
+  }
+
+  /// True/false stream — is [followerId] currently following [targetId]?
+  Stream<bool> isFollowing(String followerId, String targetId) {
+    final docId = _followDocId(followerId, targetId);
+    return _follows.doc(docId).snapshots().map((snap) => snap.exists);
+  }
+
+  /// One-time fetch of a single user's public profile by their uid.
+  Future<Map<String, dynamic>?> getUserById(String uid) async {
+    final snap = await _users.doc(uid).get();
+    if (!snap.exists) return null;
+    return {'uid': snap.id, ...snap.data() as Map<String, dynamic>};
+  }
+
+  /// Search users by exact username (case-sensitive) — used by the
+  /// "search by ID / username" feature so anyone can open a public
+  /// profile even without following them first.
+  Future<Map<String, dynamic>?> findUserByUsername(String username) async {
+    final q =
+        await _users.where('username', isEqualTo: username).limit(1).get();
+    if (q.docs.isEmpty) return null;
+    final d = q.docs.first;
+    return {'uid': d.id, ...d.data() as Map<String, dynamic>};
   }
 }
