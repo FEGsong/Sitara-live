@@ -7,6 +7,7 @@ import 'live_screen.dart';
 import 'wallet_screen.dart';
 import 'profile_screen.dart';
 import 'inbox_screen.dart';
+import 'search_user_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -134,7 +135,17 @@ class _HomeTab extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Sitara Live', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                CoinPill(coins: state.coins),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.search, color: AppColors.muted),
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SearchUserScreen()),
+                      ),
+                    ),
+                    CoinPill(coins: state.coins),
+                  ],
+                ),
               ],
             ),
           ),
