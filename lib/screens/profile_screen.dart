@@ -70,7 +70,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final followers = data?['followersCount'] ?? 0;
         final following = data?['followingCount'] ?? 0;
         final profileViews = data?['profileViews'] ?? 0;
-        final coins = data?['coins'] ?? state.coins;
 
         final body = ListView(
           padding: const EdgeInsets.only(bottom: 24),
