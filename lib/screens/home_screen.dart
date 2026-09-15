@@ -4,10 +4,10 @@ import '../models/app_state.dart';
 import '../services/firestore_service.dart';
 import '../widgets/coin_pill.dart';
 import 'live_screen.dart';
-import 'wallet_screen.dart';
-import 'profile_screen.dart';
 import 'inbox_screen.dart';
+import 'profile_screen.dart';
 import 'search_user_screen.dart';
+import 'discover_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,8 +23,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Keep AppState in sync with this user's Firestore document for
-    // as long as HomeScreen (and its tabs) are on screen.
     _firestore.userDoc(AppState.instance.uid).listen((doc) {
       if (doc.exists) {
         setState(() => AppState.instance.syncFromFirestore(doc.data() as Map<String, dynamic>));
@@ -34,7 +32,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [_HomeTab(), const WalletScreen(embedded: true), const InboxScreen(embed: true), const ProfileScreen(embedded: true)];
+    final pages = [
+      _HomeTab(),
+      const DiscoverScreen(embedded: true),
+      const InboxScreen(embed: true),
+      const ProfileScreen(embedded: true),
+    ];
 
     return Scaffold(
       body: SafeArea(child: pages[_tab]),
@@ -45,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
         indicatorColor: Colors.transparent,
         destinations: const [
   NavigationDestination(icon: Icon(Icons.home_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.home, color: AppColors.hot), label: 'Party'),
-  NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.account_balance_wallet, color: AppColors.hot), label: 'Wallet'),
+  NavigationDestination(icon: Icon(Icons.explore_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.explore, color: AppColors.hot), label: 'Discover'),
   NavigationDestination(icon: Icon(Icons.mail_outline, color: AppColors.muted), selectedIcon: Icon(Icons.mail, color: AppColors.hot), label: 'Inbox'),
   NavigationDestination(icon: Icon(Icons.person_outline, color: AppColors.muted), selectedIcon: Icon(Icons.person, color: AppColors.hot), label: 'Profile'),
 ],
