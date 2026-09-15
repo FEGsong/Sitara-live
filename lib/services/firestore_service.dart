@@ -32,6 +32,7 @@ class FirestoreService {
       'isAdmin': false,
       'followersCount': 0,
       'followingCount': 0,
+      'profileViews': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
@@ -370,6 +371,12 @@ class FirestoreService {
           .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
           .toList();
     });
+  }
+
+  /// Increments a user's profile-view count — called when someone
+  /// ELSE opens their public profile (not when they view their own).
+  Future<void> incrementProfileViews(String uid) {
+    return _users.doc(uid).update({'profileViews': FieldValue.increment(1)});
   }
 
   // ---- Announcements (shown in the Inbox "Notification" section) ----
