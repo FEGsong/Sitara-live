@@ -8,6 +8,7 @@ class FirestoreService {
   CollectionReference get _requests => _db.collection('coin_requests');
   CollectionReference get _rooms => _db.collection('rooms');
   CollectionReference get _follows => _db.collection('follows');
+  CollectionReference get _announcements => _db.collection('announcements');
 
   // ---- User profile ----
 
@@ -350,5 +351,35 @@ class FirestoreService {
     if (q.docs.isEmpty) return null;
     final d = q.docs.first;
     return {'uid': d.id, ...d.data() as Map<String, dynamic>};
+  }
+
+  /// List of users who follow [uid] — used for the "New Friends"
+  /// section on the Inbox screen.
+  Stream<List<Map<String, dynamic>>> followersOf(String uid) {
+    return _follows
+        .where('followingId', isEqualTo: uid)
+        .snapshots()
+        .asyncMap((snap) async {
+      final followerIds = snap.docs
+          .map((d) => (d.data() as Map<String, dynamic>)['followerId'] as String)
+          .toList();
+      if (followerIds.isEmpty) return <Map<String, dynamic>>[];
+      final docs = await Future.wait(followerIds.map((id) => _users.doc(id).get()));
+      return docs
+          .where((d) => d.exists)
+          .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+          .toList();
+    });
+  }
+
+  // ---- Announcements (shown in the Inbox "Notification" section) ----
+
+  Stream<List<Map<String, dynamic>>> announcements() {
+    return _announcements
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
   }
 }
