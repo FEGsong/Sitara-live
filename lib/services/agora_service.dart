@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../config.dart';
 
 /// Thin wrapper around the Agora SDK + our token server.
@@ -32,6 +33,13 @@ class AgoraService {
     required String channel,
     required bool isHost,
   }) async {
+    // Request microphone permission before doing anything else —
+    // without this, Agora can silently hang on some Android versions.
+    final micStatus = await Permission.microphone.request();
+    if (!micStatus.isGranted) {
+      throw Exception('Microphone permission denied. Please allow microphone access in your phone settings.');
+    }
+
     final data = await _fetchToken(
         channel: channel, role: isHost ? 'host' : 'audience');
     final engine = createAgoraRtcEngine();
