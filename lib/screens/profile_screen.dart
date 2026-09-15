@@ -6,6 +6,10 @@ import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import 'login_screen.dart';
 import 'admin_screen.dart';
+import 'wallet_screen.dart';
+import 'store_screen.dart';
+import 'bag_screen.dart';
+import 'reward_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool embedded;
@@ -66,6 +70,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final followers = data?['followersCount'] ?? 0;
         final following = data?['followingCount'] ?? 0;
         final profileViews = data?['profileViews'] ?? 0;
+        final coins = data?['coins'] ?? state.coins;
 
         final body = ListView(
           padding: const EdgeInsets.only(bottom: 24),
@@ -154,6 +159,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
+            // ---- Wallet / Store / Bag / Reward quick-access row ----
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  border: Border.all(color: AppColors.gold.withOpacity(.4)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _quickIcon(
+                      icon: Icons.account_balance_wallet,
+                      label: 'Wallet',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const WalletScreen()),
+                      ),
+                    ),
+                    _quickIcon(
+                      icon: Icons.storefront,
+                      label: 'Store',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const StoreScreen()),
+                      ),
+                    ),
+                    _quickIcon(
+                      icon: Icons.backpack,
+                      label: 'Bag',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const BagScreen()),
+                      ),
+                    ),
+                    _quickIcon(
+                      icon: Icons.card_giftcard,
+                      label: 'Reward',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const RewardScreen()),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
@@ -221,6 +273,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Text(label,
             style: const TextStyle(fontSize: 11, color: AppColors.muted)),
       ],
+    );
+  }
+
+  Widget _quickIcon({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Icon(icon, color: AppColors.gold, size: 26),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 
