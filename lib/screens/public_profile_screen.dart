@@ -32,6 +32,11 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       _user = data;
       _loading = false;
     });
+
+    // Count a profile view only when someone else opens this profile.
+    if (widget.targetUid != AppState.instance.uid) {
+      _fs.incrementProfileViews(widget.targetUid);
+    }
   }
 
   @override
@@ -91,8 +96,8 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _statItem('Followers', followers),
                 _statItem('Following', following),
+                _statItem('Followers', followers),
               ],
             ),
             const SizedBox(height: 20),
