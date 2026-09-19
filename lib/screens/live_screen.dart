@@ -61,6 +61,7 @@ class _LiveScreenState extends State<LiveScreen> {
   int? _mySeatIndex;
   bool _micMuted = false;
   bool _connecting = true;
+  String? _errorMessage;
 
   String? _selectedGift;
   bool _giftTrayOpen = false;
@@ -99,8 +100,11 @@ class _LiveScreenState extends State<LiveScreen> {
         _connecting = false;
       });
     } catch (e) {
-      _addChat('System', 'Could not start room: $e', false);
-      if (mounted) setState(() => _connecting = false);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not start room: $e';
+        _connecting = false;
+      });
     }
   }
 
@@ -116,14 +120,23 @@ class _LiveScreenState extends State<LiveScreen> {
         _connecting = false;
       });
     } catch (e) {
-      _addChat('System', 'Could not rejoin room: $e', false);
-      if (mounted) setState(() => _connecting = false);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not rejoin room: $e';
+        _connecting = false;
+        _roomId = null;
+      });
     }
   }
 
   Future<void> _joinAsListener() async {
     if (_roomId == null) {
-      if (mounted) setState(() => _connecting = false);
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'No room specified.';
+          _connecting = false;
+        });
+      }
       return;
     }
     try {
@@ -140,10 +153,15 @@ class _LiveScreenState extends State<LiveScreen> {
       }
       await _firestore.incrementViewers(_roomId!, 1);
       await _agora.joinChannel(channel: _roomId!, isHost: false);
+      if (!mounted) return;
+      setState(() => _connecting = false);
     } catch (e) {
-      _addChat('System', 'Could not connect: $e', false);
-    } finally {
-      if (mounted) setState(() => _connecting = false);
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = 'Could not connect: $e';
+        _connecting = false;
+        _roomId = null;
+      });
     }
   }
 
@@ -263,8 +281,32 @@ class _LiveScreenState extends State<LiveScreen> {
               ),
             ),
           ),
-          if (_connecting || _roomId == null)
+          if (_connecting)
             const Center(child: CircularProgressIndicator())
+          else if (_roomId == null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        color: Colors.redAccent, size: 40),
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage ?? 'Could not connect to the room.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Go Back'),
+                    ),
+                  ],
+                ),
+              ),
+            )
           else
             SafeArea(
               child: Column(
