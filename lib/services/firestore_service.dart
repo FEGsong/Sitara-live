@@ -9,10 +9,10 @@ class FirestoreService {
   CollectionReference get _rooms => _db.collection('rooms');
   CollectionReference get _follows => _db.collection('follows');
   CollectionReference get _announcements => _db.collection('announcements');
+  CollectionReference get _posts => _db.collection('posts');
 
   // ---- User profile ----
 
-  /// Called right after signup to create the user's profile document.
   Future<void> createUserProfile({
     required String uid,
     required String phone,
@@ -25,7 +25,7 @@ class FirestoreService {
       'username': username,
       'nickname': username,
       'profilePublic': true,
-      'coins': 150, // starter coins
+      'coins': 150,
       'earningsPKR': 0,
       'giftsSent': 0,
       'giftsReceived': 0,
@@ -39,9 +39,6 @@ class FirestoreService {
 
   Stream<DocumentSnapshot> userDoc(String uid) => _users.doc(uid).snapshots();
 
-  /// Used at sign-in time: the login form only collects phone +
-  /// password, so we look up the account's real Firebase Auth email
-  /// from Firestore before calling signInWithEmailAndPassword.
   Future<String?> getEmailByPhone(String phone) async {
     final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
     if (q.docs.isEmpty) return null;
@@ -73,7 +70,6 @@ class FirestoreService {
     });
   }
 
-  /// Every registered user — shown to the owner in the Admin Panel.
   Stream<List<Map<String, dynamic>>> allUsers() {
     return _users.orderBy('createdAt', descending: true).snapshots().map(
           (snap) => snap.docs
@@ -90,7 +86,6 @@ class FirestoreService {
         );
   }
 
-  /// Grants admin by phone number — the user must already have an account.
   Future<bool> makeAdminByPhone(String phone) async {
     final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
     if (q.docs.isEmpty) return false;
@@ -101,9 +96,6 @@ class FirestoreService {
   Future<void> removeAdmin(String uid) =>
       _users.doc(uid).update({'isAdmin': false});
 
-  // ---- Coin purchase requests (kept for the Admin Panel; currently
-  // nothing in the app submits new ones since Buy Coins now just
-  // shows a "contact the seller" message) ----
   Future<void> submitCoinRequest({
     required String uid,
     required String phone,
@@ -139,10 +131,8 @@ class FirestoreService {
     await batch.commit();
   }
 
-  // ---- Audio rooms (voice-call live rooms with seats) ----
+  // ---- Audio rooms ----
 
-  /// Creates a new live audio room with the given number of seats
-  /// (15 / 25 / 50 / 100) and automatically seats the host at seat 0.
   Future<String> createRoom({
     required String hostUid,
     required String hostName,
@@ -175,7 +165,6 @@ class FirestoreService {
     return options.first;
   }
 
-  /// Live rooms only — used on the Home screen "LIVE NOW" section.
   Stream<List<Map<String, dynamic>>> liveRooms() {
     return _rooms.where('status', isEqualTo: 'live').snapshots().map(
           (snap) => snap.docs
@@ -184,17 +173,28 @@ class FirestoreService {
         );
   }
 
+  /// Live rooms sorted by viewer count — used for the Discover "Hot"
+  /// tab's Trending Live Rooms section.
+  Stream<List<Map<String, dynamic>>> topLiveRooms({int limit = 10}) {
+    return _rooms
+        .where('status', isEqualTo: 'live')
+        .snapshots()
+        .map((snap) {
+      final rooms = snap.docs
+          .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+          .toList();
+      rooms.sort((a, b) =>
+          ((b['viewers'] ?? 0) as int).compareTo((a['viewers'] ?? 0) as int));
+      return rooms.take(limit).toList();
+    });
+  }
+
   Stream<DocumentSnapshot> roomDoc(String roomId) =>
       _rooms.doc(roomId).snapshots();
 
-  /// One-time fetch of a room — used to check whether a recent/active
-  /// room is still live before jumping the user into it.
   Future<DocumentSnapshot> getRoomOnce(String roomId) =>
       _rooms.doc(roomId).get();
 
-  /// Streams the current user's own still-live room (if any), so
-  /// Home can show a "My Room — tap to rejoin" card for a host who
-  /// navigated away without ending their stream.
   Stream<Map<String, dynamic>?> myActiveRoom(String uid) {
     return _rooms
         .where('hostUid', isEqualTo: uid)
@@ -217,7 +217,7 @@ class FirestoreService {
       final data = snap.data() as Map<String, dynamic>;
       final seats = List<dynamic>.from(data['seats'] ?? []);
       if (seatIndex < 0 || seatIndex >= seats.length) return;
-      if (seats[seatIndex] != null) return; // already taken
+      if (seats[seatIndex] != null) return;
       seats[seatIndex] = {'uid': uid, 'name': name, 'isMuted': false};
       tx.update(ref, {'seats': seats});
     });
@@ -266,8 +266,6 @@ class FirestoreService {
   CollectionReference _recentRoomsCol(String uid) =>
       _users.doc(uid).collection('recent_rooms');
 
-  /// Called when a listener joins someone else's room, so it shows
-  /// up in their "Recently" strip on Home next time.
   Future<void> recordRecentRoom({
     required String uid,
     required String roomId,
@@ -296,14 +294,11 @@ class FirestoreService {
 
   // ---- Follow / Following system ----
 
-  /// Follow-document ID is always "followerId_followingId" so we can
-  /// check/create/delete it directly without a query.
   String _followDocId(String followerId, String followingId) =>
       '${followerId}_$followingId';
 
-  /// Current user (followerId) starts following targetId.
   Future<void> followUser(String followerId, String targetId) async {
-    if (followerId == targetId) return; // can't follow yourself
+    if (followerId == targetId) return;
     final docId = _followDocId(followerId, targetId);
     final batch = _db.batch();
     batch.set(_follows.doc(docId), {
@@ -318,7 +313,6 @@ class FirestoreService {
     await batch.commit();
   }
 
-  /// Current user (followerId) unfollows targetId.
   Future<void> unfollowUser(String followerId, String targetId) async {
     final docId = _followDocId(followerId, targetId);
     final batch = _db.batch();
@@ -330,22 +324,17 @@ class FirestoreService {
     await batch.commit();
   }
 
-  /// True/false stream — is [followerId] currently following [targetId]?
   Stream<bool> isFollowing(String followerId, String targetId) {
     final docId = _followDocId(followerId, targetId);
     return _follows.doc(docId).snapshots().map((snap) => snap.exists);
   }
 
-  /// One-time fetch of a single user's public profile by their uid.
   Future<Map<String, dynamic>?> getUserById(String uid) async {
     final snap = await _users.doc(uid).get();
     if (!snap.exists) return null;
     return {'uid': snap.id, ...snap.data() as Map<String, dynamic>};
   }
 
-  /// Search users by exact username (case-sensitive) — used by the
-  /// "search by ID / username" feature so anyone can open a public
-  /// profile even without following them first.
   Future<Map<String, dynamic>?> findUserByUsername(String username) async {
     final q =
         await _users.where('username', isEqualTo: username).limit(1).get();
@@ -354,8 +343,6 @@ class FirestoreService {
     return {'uid': d.id, ...d.data() as Map<String, dynamic>};
   }
 
-  /// List of users who follow [uid] — used for the "New Friends"
-  /// section on the Inbox screen.
   Stream<List<Map<String, dynamic>>> followersOf(String uid) {
     return _follows
         .where('followingId', isEqualTo: uid)
@@ -373,13 +360,34 @@ class FirestoreService {
     });
   }
 
-  /// Increments a user's profile-view count — called when someone
-  /// ELSE opens their public profile (not when they view their own).
+  /// Recently joined users — used by Discover's "New Faces" tab.
+  Stream<List<Map<String, dynamic>>> newFaces({int limit = 30}) {
+    return _users
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  /// Users sorted by followers — used for Discover "Hot" tab's
+  /// Top Hosts section.
+  Stream<List<Map<String, dynamic>>> topHosts({int limit = 10}) {
+    return _users
+        .orderBy('followersCount', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
   Future<void> incrementProfileViews(String uid) {
     return _users.doc(uid).update({'profileViews': FieldValue.increment(1)});
   }
 
-  // ---- Announcements (shown in the Inbox "Notification" section) ----
+  // ---- Announcements ----
 
   Stream<List<Map<String, dynamic>>> announcements() {
     return _announcements
@@ -388,5 +396,57 @@ class FirestoreService {
         .map((snap) => snap.docs
             .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
             .toList());
+  }
+
+  // ---- Posts (Discover "Moments" feed — photos/videos + text) ----
+
+  Future<void> createPost({
+    required String uid,
+    required String authorName,
+    required String text,
+    String? mediaUrl,
+    String? mediaType,
+  }) {
+    return _posts.add({
+      'uid': uid,
+      'authorName': authorName,
+      'text': text,
+      'mediaUrl': mediaUrl,
+      'mediaType': mediaType,
+      'likesCount': 0,
+      'commentsCount': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Stream<List<Map<String, dynamic>>> latestPosts({int limit = 50}) {
+    return _posts
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  CollectionReference _postLikes(String postId) =>
+      _posts.doc(postId).collection('likes');
+
+  Future<void> likePost(String postId, String uid) async {
+    final batch = _db.batch();
+    batch.set(_postLikes(postId).doc(uid), {'likedAt': FieldValue.serverTimestamp()});
+    batch.update(_posts.doc(postId), {'likesCount': FieldValue.increment(1)});
+    await batch.commit();
+  }
+
+  Future<void> unlikePost(String postId, String uid) async {
+    final batch = _db.batch();
+    batch.delete(_postLikes(postId).doc(uid));
+    batch.update(_posts.doc(postId), {'likesCount': FieldValue.increment(-1)});
+    await batch.commit();
+  }
+
+  Stream<bool> isPostLiked(String postId, String uid) {
+    return _postLikes(postId).doc(uid).snapshots().map((snap) => snap.exists);
   }
 }
