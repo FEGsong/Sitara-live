@@ -133,6 +133,11 @@ class FirestoreService {
 
   // ---- Audio rooms ----
 
+  /// Creates a new live audio room with the given number of seats
+  /// (15 / 25 / 50 / 100) and automatically seats the host at seat 0.
+  /// NOTE: growable:true is required — List.filled() defaults to a
+  /// fixed-length (unmodifiable) list, which crashes the first time
+  /// takeSeat() tries to update an entry.
   Future<String> createRoom({
     required String hostUid,
     required String hostName,
@@ -143,7 +148,7 @@ class FirestoreService {
       'hostUid': hostUid,
       'hostName': hostName,
       'seatCount': seatCount,
-      'seats': List<dynamic>.filled(seatCount, null),
+      'seats': List<dynamic>.filled(seatCount, null, growable: true),
       'status': 'live',
       'viewers': 0,
       'c1': gradient[0],
@@ -448,5 +453,36 @@ class FirestoreService {
 
   Stream<bool> isPostLiked(String postId, String uid) {
     return _postLikes(postId).doc(uid).snapshots().map((snap) => snap.exists);
+  }
+
+  // ---- Post comments ----
+
+  CollectionReference _postComments(String postId) =>
+      _posts.doc(postId).collection('comments');
+
+  Future<void> addComment({
+    required String postId,
+    required String uid,
+    required String authorName,
+    required String text,
+  }) async {
+    final batch = _db.batch();
+    batch.set(_postComments(postId).doc(), {
+      'uid': uid,
+      'authorName': authorName,
+      'text': text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(_posts.doc(postId), {'commentsCount': FieldValue.increment(1)});
+    await batch.commit();
+  }
+
+  Stream<List<Map<String, dynamic>>> commentsOf(String postId) {
+    return _postComments(postId)
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
   }
 }
