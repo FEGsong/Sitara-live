@@ -2,10 +2,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/firestore_service.dart';
 
-/// Kept here (rather than in wallet_screen.dart) purely so the Admin
-/// Panel can show a readable payment-method name on old/legacy coin
-/// requests. The Buy Coins flow itself no longer collects a method —
-/// it just tells the user to contact the coin seller directly.
 const List<Map<String, String>> kPayMethods = [
   {'id': 'jazzcash', 'name': 'JazzCash'},
   {'id': 'easypaisa', 'name': 'Easypaisa'},
@@ -22,6 +18,7 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   final _firestore = FirestoreService();
   final _newAdminCtrl = TextEditingController();
+  final _newSellerCtrl = TextEditingController();
 
   Future<void> _addAdmin() async {
     final val = _newAdminCtrl.text.trim();
@@ -39,6 +36,24 @@ class _AdminScreenState extends State<AdminScreen> {
     _newAdminCtrl.clear();
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('✅ $val is now an admin')));
+  }
+
+  Future<void> _addSeller() async {
+    final val = _newSellerCtrl.text.trim();
+    if (val.isEmpty) return;
+    final ok = await _firestore.makeCoinSellerByPhone(val);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'No account found for this number — they must sign up first')),
+      );
+      return;
+    }
+    _newSellerCtrl.clear();
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('✅ $val is now a coin seller')));
   }
 
   Future<void> _approve(Map<String, dynamic> req) async {
@@ -99,7 +114,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                              '${u['phone']}${u['isAdmin'] == true ? '  ·  👑 admin' : ''}',
+                              '${u['phone']}${u['isAdmin'] == true ? '  ·  👑 admin' : ''}${u['isCoinSeller'] == true ? '  ·  🪙 seller' : ''}',
                               style: const TextStyle(
                                   fontSize: 11, color: AppColors.muted)),
                         ],
@@ -159,6 +174,71 @@ class _AdminScreenState extends State<AdminScreen> {
                                     GestureDetector(
                                       onTap: () =>
                                           _firestore.removeAdmin(a['uid']),
+                                      child: const Text('Remove',
+                                          style: TextStyle(
+                                              color: AppColors.hot,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              ))
+                          .toList(),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          _box(
+            title: 'Coin Sellers',
+            subtitle:
+                'These accounts appear in every user\'s Wallet screen so people can contact them to buy coins',
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                        child: TextField(
+                            controller: _newSellerCtrl,
+                            decoration: const InputDecoration(
+                                hintText: '+92 3XX XXXXXXX'))),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                        onPressed: _addSeller, child: const Text('Add')),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: _firestore.allCoinSellers(),
+                  builder: (context, snap) {
+                    final sellers = snap.data ?? [];
+                    if (sellers.isEmpty) {
+                      return const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('No coin sellers added yet',
+                              style: TextStyle(
+                                  color: AppColors.muted, fontSize: 12)));
+                    }
+                    return Column(
+                      children: sellers
+                          .map((s) => Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 9),
+                                decoration: BoxDecoration(
+                                    color: AppColors.surface2,
+                                    border: Border.all(color: AppColors.line),
+                                    borderRadius: BorderRadius.circular(10)),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('🪙 ${s['phone']}',
+                                        style: const TextStyle(fontSize: 12.5)),
+                                    GestureDetector(
+                                      onTap: () =>
+                                          _firestore.removeCoinSeller(s['uid']),
                                       child: const Text('Remove',
                                           style: TextStyle(
                                               color: AppColors.hot,
