@@ -31,6 +31,7 @@ class FirestoreService {
       'giftsReceived': 0,
       'isAdmin': false,
       'isCoinSeller': false,
+      'isVerified': false,
       'followersCount': 0,
       'followingCount': 0,
       'profileViews': 0,
@@ -56,14 +57,11 @@ class FirestoreService {
     return _users.doc(uid).update(data);
   }
 
-  /// Spends coins and logs a transaction record so it shows up in
-  /// the user's Transaction History.
   Future<void> spendCoins(String uid, int amount, {String reason = 'Coins spent'}) async {
     await _users.doc(uid).update({'coins': FieldValue.increment(-amount)});
     await _logTransaction(uid, title: reason, amount: -amount);
   }
 
-  /// Adds coins and logs a transaction record.
   Future<void> addCoins(String uid, int amount, {String reason = 'Coins added'}) async {
     await _users.doc(uid).update({'coins': FieldValue.increment(amount)});
     await _logTransaction(uid, title: reason, amount: amount);
@@ -104,8 +102,6 @@ class FirestoreService {
 
   // ---- Coin sellers ----
 
-  /// Marks an existing account (by phone) as a coin seller — they'll
-  /// appear in the Wallet screen's "Coin Sellers" list.
   Future<bool> makeCoinSellerByPhone(String phone) async {
     final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
     if (q.docs.isEmpty) return false;
@@ -118,6 +114,26 @@ class FirestoreService {
 
   Stream<List<Map<String, dynamic>>> allCoinSellers() {
     return _users.where('isCoinSeller', isEqualTo: true).snapshots().map(
+          (snap) => snap.docs
+              .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+              .toList(),
+        );
+  }
+
+  // ---- Verified / official accounts ----
+
+  Future<bool> makeVerifiedByPhone(String phone) async {
+    final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
+    if (q.docs.isEmpty) return false;
+    await q.docs.first.reference.update({'isVerified': true});
+    return true;
+  }
+
+  Future<void> removeVerified(String uid) =>
+      _users.doc(uid).update({'isVerified': false});
+
+  Stream<List<Map<String, dynamic>>> allVerified() {
+    return _users.where('isVerified', isEqualTo: true).snapshots().map(
           (snap) => snap.docs
               .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
               .toList(),
@@ -514,12 +530,11 @@ class FirestoreService {
       {required String title, required int amount}) {
     return _transactionsCol(uid).add({
       'title': title,
-      'amount': amount, // positive = credit, negative = debit
+      'amount': amount,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }
 
-  /// Newest-first list of this user's coin transactions.
   Stream<List<Map<String, dynamic>>> transactionsOf(String uid, {int limit = 100}) {
     return _transactionsCol(uid)
         .orderBy('createdAt', descending: true)
