@@ -19,6 +19,7 @@ class _AdminScreenState extends State<AdminScreen> {
   final _firestore = FirestoreService();
   final _newAdminCtrl = TextEditingController();
   final _newSellerCtrl = TextEditingController();
+  final _newVerifiedCtrl = TextEditingController();
 
   Future<void> _addAdmin() async {
     final val = _newAdminCtrl.text.trim();
@@ -54,6 +55,24 @@ class _AdminScreenState extends State<AdminScreen> {
     _newSellerCtrl.clear();
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('✅ $val is now a coin seller')));
+  }
+
+  Future<void> _addVerified() async {
+    final val = _newVerifiedCtrl.text.trim();
+    if (val.isEmpty) return;
+    final ok = await _firestore.makeVerifiedByPhone(val);
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'No account found for this number — they must sign up first')),
+      );
+      return;
+    }
+    _newVerifiedCtrl.clear();
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('✅ $val is now verified')));
   }
 
   Future<void> _approve(Map<String, dynamic> req) async {
@@ -114,7 +133,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                              '${u['phone']}${u['isAdmin'] == true ? '  ·  👑 admin' : ''}${u['isCoinSeller'] == true ? '  ·  🪙 seller' : ''}',
+                              '${u['phone']}${u['isAdmin'] == true ? '  ·  👑 admin' : ''}${u['isCoinSeller'] == true ? '  ·  🪙 seller' : ''}${u['isVerified'] == true ? '  ·  ✅ verified' : ''}',
                               style: const TextStyle(
                                   fontSize: 11, color: AppColors.muted)),
                         ],
@@ -239,6 +258,71 @@ class _AdminScreenState extends State<AdminScreen> {
                                     GestureDetector(
                                       onTap: () =>
                                           _firestore.removeCoinSeller(s['uid']),
+                                      child: const Text('Remove',
+                                          style: TextStyle(
+                                              color: AppColors.hot,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              ))
+                          .toList(),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          _box(
+            title: 'Verified Accounts',
+            subtitle:
+                'Gives a blue checkmark badge next to their name (e.g. the official Sitara Live account)',
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                        child: TextField(
+                            controller: _newVerifiedCtrl,
+                            decoration: const InputDecoration(
+                                hintText: '+92 3XX XXXXXXX'))),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                        onPressed: _addVerified, child: const Text('Add')),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: _firestore.allVerified(),
+                  builder: (context, snap) {
+                    final verified = snap.data ?? [];
+                    if (verified.isEmpty) {
+                      return const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('No verified accounts yet',
+                              style: TextStyle(
+                                  color: AppColors.muted, fontSize: 12)));
+                    }
+                    return Column(
+                      children: verified
+                          .map((v) => Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 9),
+                                decoration: BoxDecoration(
+                                    color: AppColors.surface2,
+                                    border: Border.all(color: AppColors.line),
+                                    borderRadius: BorderRadius.circular(10)),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('✅ ${v['phone']}',
+                                        style: const TextStyle(fontSize: 12.5)),
+                                    GestureDetector(
+                                      onTap: () =>
+                                          _firestore.removeVerified(v['uid']),
                                       child: const Text('Remove',
                                           style: TextStyle(
                                               color: AppColors.hot,
