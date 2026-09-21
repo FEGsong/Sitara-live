@@ -30,6 +30,7 @@ class FirestoreService {
       'giftsSent': 0,
       'giftsReceived': 0,
       'isAdmin': false,
+      'isCoinSeller': false,
       'followersCount': 0,
       'followingCount': 0,
       'profileViews': 0,
@@ -55,12 +56,17 @@ class FirestoreService {
     return _users.doc(uid).update(data);
   }
 
-  Future<void> spendCoins(String uid, int amount) {
-    return _users.doc(uid).update({'coins': FieldValue.increment(-amount)});
+  /// Spends coins and logs a transaction record so it shows up in
+  /// the user's Transaction History.
+  Future<void> spendCoins(String uid, int amount, {String reason = 'Coins spent'}) async {
+    await _users.doc(uid).update({'coins': FieldValue.increment(-amount)});
+    await _logTransaction(uid, title: reason, amount: -amount);
   }
 
-  Future<void> addCoins(String uid, int amount) {
-    return _users.doc(uid).update({'coins': FieldValue.increment(amount)});
+  /// Adds coins and logs a transaction record.
+  Future<void> addCoins(String uid, int amount, {String reason = 'Coins added'}) async {
+    await _users.doc(uid).update({'coins': FieldValue.increment(amount)});
+    await _logTransaction(uid, title: reason, amount: amount);
   }
 
   Future<void> addEarnings(String uid, double amount) {
@@ -96,6 +102,28 @@ class FirestoreService {
   Future<void> removeAdmin(String uid) =>
       _users.doc(uid).update({'isAdmin': false});
 
+  // ---- Coin sellers ----
+
+  /// Marks an existing account (by phone) as a coin seller — they'll
+  /// appear in the Wallet screen's "Coin Sellers" list.
+  Future<bool> makeCoinSellerByPhone(String phone) async {
+    final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
+    if (q.docs.isEmpty) return false;
+    await q.docs.first.reference.update({'isCoinSeller': true});
+    return true;
+  }
+
+  Future<void> removeCoinSeller(String uid) =>
+      _users.doc(uid).update({'isCoinSeller': false});
+
+  Stream<List<Map<String, dynamic>>> allCoinSellers() {
+    return _users.where('isCoinSeller', isEqualTo: true).snapshots().map(
+          (snap) => snap.docs
+              .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+              .toList(),
+        );
+  }
+
   Future<void> submitCoinRequest({
     required String uid,
     required String phone,
@@ -129,15 +157,11 @@ class FirestoreService {
     batch.update(_requests.doc(requestId), {'status': 'approved'});
     batch.update(_users.doc(uid), {'coins': FieldValue.increment(coins)});
     await batch.commit();
+    await _logTransaction(uid, title: 'Coins purchased', amount: coins);
   }
 
   // ---- Audio rooms ----
 
-  /// Creates a new live audio room with the given number of seats
-  /// (15 / 25 / 50 / 100) and automatically seats the host at seat 0.
-  /// NOTE: growable:true is required — List.filled() defaults to a
-  /// fixed-length (unmodifiable) list, which crashes the first time
-  /// takeSeat() tries to update an entry.
   Future<String> createRoom({
     required String hostUid,
     required String hostName,
@@ -178,8 +202,6 @@ class FirestoreService {
         );
   }
 
-  /// Live rooms sorted by viewer count — used for the Discover "Hot"
-  /// tab's Trending Live Rooms section.
   Stream<List<Map<String, dynamic>>> topLiveRooms({int limit = 10}) {
     return _rooms
         .where('status', isEqualTo: 'live')
@@ -365,7 +387,6 @@ class FirestoreService {
     });
   }
 
-  /// Recently joined users — used by Discover's "New Faces" tab.
   Stream<List<Map<String, dynamic>>> newFaces({int limit = 30}) {
     return _users
         .orderBy('createdAt', descending: true)
@@ -376,8 +397,6 @@ class FirestoreService {
             .toList());
   }
 
-  /// Users sorted by followers — used for Discover "Hot" tab's
-  /// Top Hosts section.
   Stream<List<Map<String, dynamic>>> topHosts({int limit = 10}) {
     return _users
         .orderBy('followersCount', descending: true)
@@ -403,7 +422,7 @@ class FirestoreService {
             .toList());
   }
 
-  // ---- Posts (Discover "Moments" feed — photos/videos + text) ----
+  // ---- Posts ----
 
   Future<void> createPost({
     required String uid,
@@ -480,6 +499,31 @@ class FirestoreService {
   Stream<List<Map<String, dynamic>>> commentsOf(String postId) {
     return _postComments(postId)
         .orderBy('createdAt', descending: false)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  // ---- Transaction history (per user) ----
+
+  CollectionReference _transactionsCol(String uid) =>
+      _users.doc(uid).collection('transactions');
+
+  Future<void> _logTransaction(String uid,
+      {required String title, required int amount}) {
+    return _transactionsCol(uid).add({
+      'title': title,
+      'amount': amount, // positive = credit, negative = debit
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Newest-first list of this user's coin transactions.
+  Stream<List<Map<String, dynamic>>> transactionsOf(String uid, {int limit = 100}) {
+    return _transactionsCol(uid)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
         .snapshots()
         .map((snap) => snap.docs
             .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
