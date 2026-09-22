@@ -559,5 +559,20 @@ class FirestoreService {
         .map((snap) => snap.docs
             .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
             .toList());
+      /// Prefix search on username — powers live suggestions as the user
+  /// types in the search bar. Firestore doesn't support "contains",
+  /// so this matches usernames starting with [prefix].
+  Future<List<Map<String, dynamic>>> searchUsersByPrefix(String prefix, {int limit = 10}) async {
+    if (prefix.isEmpty) return [];
+    final q = await _users
+        .orderBy('username')
+        .startAt([prefix])
+        .endAt(['$prefix\uf8ff'])
+        .limit(limit)
+        .get();
+    return q.docs
+        .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+        .toList();
   }
+  
 }
