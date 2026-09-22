@@ -11,6 +11,19 @@ class FirestoreService {
   CollectionReference get _announcements => _db.collection('announcements');
   CollectionReference get _posts => _db.collection('posts');
 
+  /// Normalizes a Pakistani phone number to the stored format
+  /// (+92XXXXXXXXXX) regardless of how the admin typed it —
+  /// accepts "03XX...", "3XX...", or "+923XX..." forms.
+  String _normalizePhone(String input) {
+    var digits = input.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.startsWith('92')) {
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0')) {
+      digits = digits.substring(1);
+    }
+    return '+92$digits';
+  }
+
   // ---- User profile ----
 
   Future<void> createUserProfile({
@@ -91,7 +104,8 @@ class FirestoreService {
   }
 
   Future<bool> makeAdminByPhone(String phone) async {
-    final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
+    final normalized = _normalizePhone(phone);
+    final q = await _users.where('phone', isEqualTo: normalized).limit(1).get();
     if (q.docs.isEmpty) return false;
     await q.docs.first.reference.update({'isAdmin': true});
     return true;
@@ -103,7 +117,8 @@ class FirestoreService {
   // ---- Coin sellers ----
 
   Future<bool> makeCoinSellerByPhone(String phone) async {
-    final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
+    final normalized = _normalizePhone(phone);
+    final q = await _users.where('phone', isEqualTo: normalized).limit(1).get();
     if (q.docs.isEmpty) return false;
     await q.docs.first.reference.update({'isCoinSeller': true});
     return true;
@@ -123,7 +138,8 @@ class FirestoreService {
   // ---- Verified / official accounts ----
 
   Future<bool> makeVerifiedByPhone(String phone) async {
-    final q = await _users.where('phone', isEqualTo: phone).limit(1).get();
+    final normalized = _normalizePhone(phone);
+    final q = await _users.where('phone', isEqualTo: normalized).limit(1).get();
     if (q.docs.isEmpty) return false;
     await q.docs.first.reference.update({'isVerified': true});
     return true;
@@ -199,10 +215,6 @@ class FirestoreService {
     return doc.id;
   }
 
-  /// NOTE: this MUST be `final`, not `const`. A `const` list literal
-  /// is compile-time-immutable in Dart, so calling .shuffle() on it
-  /// throws "Unsupported operation: Cannot modify an unmodifiable
-  /// list" — this was the real cause of "Go Live" always failing.
   List<int> _randomGradient() {
     final options = [
       [0xFFFF2E6B, 0xFF7A1BFF],
