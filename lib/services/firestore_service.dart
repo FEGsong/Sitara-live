@@ -199,8 +199,12 @@ class FirestoreService {
     return doc.id;
   }
 
+  /// NOTE: this MUST be `final`, not `const`. A `const` list literal
+  /// is compile-time-immutable in Dart, so calling .shuffle() on it
+  /// throws "Unsupported operation: Cannot modify an unmodifiable
+  /// list" — this was the real cause of "Go Live" always failing.
   List<int> _randomGradient() {
-    const options = [
+    final options = [
       [0xFFFF2E6B, 0xFF7A1BFF],
       [0xFF2DE8C4, 0xFF12707F],
       [0xFFFFC93C, 0xFFB5641A],
