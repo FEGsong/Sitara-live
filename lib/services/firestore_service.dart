@@ -10,6 +10,7 @@ class FirestoreService {
   CollectionReference get _follows => _db.collection('follows');
   CollectionReference get _announcements => _db.collection('announcements');
   CollectionReference get _posts => _db.collection('posts');
+  CollectionReference get _chats => _db.collection('chats');
 
   /// Normalizes a Pakistani phone number to the stored format
   /// (+92XXXXXXXXXX) regardless of how the admin typed it —
@@ -402,6 +403,19 @@ class FirestoreService {
     return {'uid': d.id, ...d.data() as Map<String, dynamic>};
   }
 
+  Future<List<Map<String, dynamic>>> searchUsersByPrefix(String prefix, {int limit = 10}) async {
+    if (prefix.isEmpty) return [];
+    final q = await _users
+        .orderBy('username')
+        .startAt([prefix])
+        .endAt(['$prefix\uf8ff'])
+        .limit(limit)
+        .get();
+    return q.docs
+        .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+        .toList();
+  }
+
   Stream<List<Map<String, dynamic>>> followersOf(String uid) {
     return _follows
         .where('followingId', isEqualTo: uid)
@@ -559,20 +573,47 @@ class FirestoreService {
         .map((snap) => snap.docs
             .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
             .toList());
-      /// Prefix search on username — powers live suggestions as the user
-  /// types in the search bar. Firestore doesn't support "contains",
-  /// so this matches usernames starting with [prefix].
-  Future<List<Map<String, dynamic>>> searchUsersByPrefix(String prefix, {int limit = 10}) async {
-    if (prefix.isEmpty) return [];
-    final q = await _users
-        .orderBy('username')
-        .startAt([prefix])
-        .endAt(['$prefix\uf8ff'])
-        .limit(limit)
-        .get();
-    return q.docs
-        .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
-        .toList();
   }
-  
+
+  // ---- Direct messages (in-app chat) ----
+
+  /// Chat ID is always the two uids sorted alphabetically, joined —
+  /// so both users land in the same conversation regardless of who
+  /// started it.
+  String _chatId(String uidA, String uidB) {
+    final ids = [uidA, uidB]..sort();
+    return '${ids[0]}_${ids[1]}';
+  }
+
+  Future<void> sendMessage({
+    required String fromUid,
+    required String toUid,
+    required String text,
+  }) async {
+    final chatId = _chatId(fromUid, toUid);
+    final chatRef = _chats.doc(chatId);
+    await chatRef.collection('messages').add({
+      'fromUid': fromUid,
+      'text': text,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await chatRef.set({
+      'participants': [fromUid, toUid],
+      'lastMessage': text,
+      'lastSenderUid': fromUid,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Stream<List<Map<String, dynamic>>> messagesOf(String uidA, String uidB) {
+    final chatId = _chatId(uidA, uidB);
+    return _chats
+        .doc(chatId)
+        .collection('messages')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
 }
