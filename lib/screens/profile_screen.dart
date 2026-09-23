@@ -11,6 +11,8 @@ import 'wallet_screen.dart';
 import 'store_screen.dart';
 import 'bag_screen.dart';
 import 'reward_screen.dart';
+import 'edit_profile_screen.dart';
+import 'profile_viewers_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool embedded;
@@ -21,29 +23,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  late final TextEditingController _usernameCtrl;
-  late final TextEditingController _nicknameCtrl;
   final _firestore = FirestoreService();
-
-  @override
-  void initState() {
-    super.initState();
-    _usernameCtrl = TextEditingController(text: AppState.instance.username);
-    _nicknameCtrl = TextEditingController(text: AppState.instance.nickname);
-  }
-
-  Future<void> _saveProfile() async {
-    final username = _usernameCtrl.text.trim();
-    final nickname = _nicknameCtrl.text.trim();
-    await _firestore.updateProfile(
-      AppState.instance.uid,
-      username: username.isEmpty ? null : username,
-      nickname: nickname.isEmpty ? null : nickname,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('✅ Profile saved')));
-  }
 
   Future<void> _togglePublic(bool value) async {
     setState(() => AppState.instance.profilePublic = value);
@@ -72,6 +52,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final following = data?['followingCount'] ?? 0;
         final profileViews = data?['profileViews'] ?? 0;
         final isVerified = data?['isVerified'] == true;
+        final nickname = data?['nickname'] ?? state.nickname;
+        final username = data?['username'] ?? state.username;
+        final bio = data?['bio'] ?? '';
+        final avatarUrl = data?['avatarUrl'] ?? '';
 
         final body = ListView(
           padding: const EdgeInsets.only(bottom: 24),
@@ -82,7 +66,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Text('Profile',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
 
-            // ---- Profile card: avatar, name, id, stats, views badge ----
             Container(
               margin: const EdgeInsets.all(16),
               padding: const EdgeInsets.all(20),
@@ -95,67 +78,112 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Positioned(
                     top: 0,
                     right: 0,
-                    child: Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(.35),
-                        borderRadius: BorderRadius.circular(999),
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const ProfileViewersScreen()),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.remove_red_eye,
-                              size: 12, color: AppColors.muted),
-                          const SizedBox(width: 4),
-                          Text('$profileViews',
-                              style: const TextStyle(
-                                  fontSize: 11, color: AppColors.muted)),
-                        ],
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(.35),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.remove_red_eye, size: 12, color: AppColors.muted),
+                            const SizedBox(width: 4),
+                            Text('$profileViews',
+                                style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(.35),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: const Icon(Icons.edit, size: 14, color: Colors.white),
                       ),
                     ),
                   ),
                   Column(
                     children: [
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                                colors: [AppColors.hot, Color(0xFF7A1BFF)]),
-                            shape: BoxShape.circle),
-                        alignment: Alignment.center,
-                        child: const Icon(Icons.person,
-                            size: 30, color: Colors.white),
+                      Stack(
+                        children: [
+                          Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              gradient: avatarUrl.isEmpty
+                                  ? const LinearGradient(
+                                      colors: [AppColors.hot, Color(0xFF7A1BFF)])
+                                  : null,
+                              shape: BoxShape.circle,
+                              image: avatarUrl.isNotEmpty
+                                  ? DecorationImage(
+                                      image: NetworkImage(avatarUrl), fit: BoxFit.cover)
+                                  : null,
+                            ),
+                            alignment: Alignment.center,
+                            child: avatarUrl.isEmpty
+                                ? const Icon(Icons.person, size: 30, color: Colors.white)
+                                : null,
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: GestureDetector(
+                              onTap: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Stories — coming soon')),
+                                );
+                              },
+                              child: Container(
+                                width: 24,
+                                height: 24,
+                                decoration: const BoxDecoration(
+                                    color: AppColors.cyan, shape: BoxShape.circle),
+                                child: const Icon(Icons.add, size: 16, color: Colors.black),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 10),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                              state.nickname.isNotEmpty
-                                  ? state.nickname
-                                  : (state.username.isNotEmpty
-                                      ? state.username
-                                      : 'User'),
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                          Text(nickname.isNotEmpty ? nickname : 'User',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                           if (isVerified) const VerifiedBadge(),
                         ],
                       ),
                       const SizedBox(height: 2),
-                      Text('ID: ${state.uid}',
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.muted)),
+                      Text('@$username',
+                          style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                      if (bio.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(bio,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 11.5, color: AppColors.muted)),
+                      ],
                       const SizedBox(height: 14),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         children: [
                           _statItem('Following', following),
-                          Container(
-                              width: 1,
-                              height: 24,
-                              color: AppColors.line),
+                          Container(width: 1, height: 24, color: AppColors.line),
                           _statItem('Followers', followers),
                         ],
                       ),
@@ -165,7 +193,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
 
-            // ---- Wallet / Store / Bag / Reward quick-access row ----
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                  ),
+                  child: const Text('Edit Profile'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
@@ -216,22 +257,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 children: [
-                  _field('Username', _usernameCtrl),
-                  const SizedBox(height: 12),
-                  _field('Nickname', _nicknameCtrl),
-                  const SizedBox(height: 4),
                   _toggleRow(
                     'Public Profile',
                     'Turning this off makes your profile private',
                     state.profilePublic,
                     _togglePublic,
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                          onPressed: _saveProfile,
-                          child: const Text('Save Profile'))),
                   const SizedBox(height: 20),
                   if (AppState.instance.isOwnerOrAdmin) ...[
                     _toggleRow(
@@ -272,21 +303,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _statItem(String label, int count) {
     return Column(
       children: [
-        Text('$count',
-            style:
-                const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        Text('$count', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         const SizedBox(height: 2),
-        Text(label,
-            style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+        Text(label, style: const TextStyle(fontSize: 11, color: AppColors.muted)),
       ],
     );
   }
 
-  Widget _quickIcon({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _quickIcon({required IconData icon, required String label, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -299,23 +323,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _field(String label, TextEditingController ctrl) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.muted,
-                fontWeight: FontWeight.w600)),
-        const SizedBox(height: 6),
-        TextField(controller: ctrl),
-      ],
-    );
-  }
-
-  Widget _toggleRow(
-      String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+  Widget _toggleRow(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -328,18 +336,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 13.5, fontWeight: FontWeight.w600)),
+                Text(title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text(subtitle,
-                    style: const TextStyle(
-                        fontSize: 10.5, color: AppColors.muted)),
+                Text(subtitle, style: const TextStyle(fontSize: 10.5, color: AppColors.muted)),
               ],
             ),
           ),
-          Switch(
-              value: value, onChanged: onChanged, activeColor: AppColors.gold),
+          Switch(value: value, onChanged: onChanged, activeColor: AppColors.gold),
         ],
       ),
     );
