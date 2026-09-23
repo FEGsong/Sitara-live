@@ -37,6 +37,8 @@ class FirestoreService {
       'email': email,
       'username': username,
       'nickname': username,
+      'bio': '',
+      'avatarUrl': '',
       'profilePublic': true,
       'coins': 150,
       'earningsPKR': 0,
@@ -62,10 +64,16 @@ class FirestoreService {
   }
 
   Future<void> updateProfile(String uid,
-      {String? username, String? nickname, bool? profilePublic}) {
+      {String? username,
+      String? nickname,
+      String? bio,
+      String? avatarUrl,
+      bool? profilePublic}) {
     final data = <String, dynamic>{};
     if (username != null) data['username'] = username;
     if (nickname != null) data['nickname'] = nickname;
+    if (bio != null) data['bio'] = bio;
+    if (avatarUrl != null) data['avatarUrl'] = avatarUrl;
     if (profilePublic != null) data['profilePublic'] = profilePublic;
     return _users.doc(uid).update(data);
   }
@@ -452,8 +460,35 @@ class FirestoreService {
             .toList());
   }
 
-  Future<void> incrementProfileViews(String uid) {
-    return _users.doc(uid).update({'profileViews': FieldValue.increment(1)});
+  // ---- Profile viewers (who viewed my profile) ----
+
+  CollectionReference _profileViewersCol(String uid) =>
+      _users.doc(uid).collection('profile_viewers');
+
+  /// Records that [viewerUid] viewed [uid]'s profile, and bumps the
+  /// profileViews counter only the first time this viewer is seen.
+  Future<void> recordProfileView(String uid, String viewerUid, String viewerName) async {
+    if (uid == viewerUid) return;
+    final ref = _profileViewersCol(uid).doc(viewerUid);
+    final existing = await ref.get();
+    if (!existing.exists) {
+      await _users.doc(uid).update({'profileViews': FieldValue.increment(1)});
+    }
+    await ref.set({
+      'viewerUid': viewerUid,
+      'viewerName': viewerName,
+      'viewedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Newest-first list of people who viewed [uid]'s profile.
+  Stream<List<Map<String, dynamic>>> profileViewersOf(String uid) {
+    return _profileViewersCol(uid)
+        .orderBy('viewedAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
   }
 
   // ---- Announcements ----
@@ -613,7 +648,7 @@ class FirestoreService {
             .toList());
   }
 
-  // ---- Reports (Report a user — goes straight to the admin) ----
+  // ---- Reports ----
 
   Future<void> reportUser({
     required String reporterUid,
@@ -631,7 +666,6 @@ class FirestoreService {
     });
   }
 
-  /// All reports, newest first — shown in the Admin Panel.
   Stream<List<Map<String, dynamic>>> allReports() {
     return _reports
         .orderBy('createdAt', descending: true)
