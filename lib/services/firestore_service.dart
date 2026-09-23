@@ -11,10 +11,9 @@ class FirestoreService {
   CollectionReference get _announcements => _db.collection('announcements');
   CollectionReference get _posts => _db.collection('posts');
   CollectionReference get _chats => _db.collection('chats');
+  CollectionReference get _reports => _db.collection('reports');
+  CollectionReference get _blocks => _db.collection('blocks');
 
-  /// Normalizes a Pakistani phone number to the stored format
-  /// (+92XXXXXXXXXX) regardless of how the admin typed it —
-  /// accepts "03XX...", "3XX...", or "+923XX..." forms.
   String _normalizePhone(String input) {
     var digits = input.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.startsWith('92')) {
@@ -577,9 +576,6 @@ class FirestoreService {
 
   // ---- Direct messages (in-app chat) ----
 
-  /// Chat ID is always the two uids sorted alphabetically, joined —
-  /// so both users land in the same conversation regardless of who
-  /// started it.
   String _chatId(String uidA, String uidB) {
     final ids = [uidA, uidB]..sort();
     return '${ids[0]}_${ids[1]}';
@@ -615,5 +611,60 @@ class FirestoreService {
         .map((snap) => snap.docs
             .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
             .toList());
+  }
+
+  // ---- Reports (Report a user — goes straight to the admin) ----
+
+  Future<void> reportUser({
+    required String reporterUid,
+    required String reportedUid,
+    required String reportedName,
+    required String reason,
+  }) {
+    return _reports.add({
+      'reporterUid': reporterUid,
+      'reportedUid': reportedUid,
+      'reportedName': reportedName,
+      'reason': reason,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// All reports, newest first — shown in the Admin Panel.
+  Stream<List<Map<String, dynamic>>> allReports() {
+    return _reports
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  Future<void> resolveReport(String reportId) =>
+      _reports.doc(reportId).update({'status': 'resolved'});
+
+  // ---- Block ----
+
+  String _blockDocId(String blockerUid, String blockedUid) =>
+      '${blockerUid}_$blockedUid';
+
+  Future<void> blockUser(String blockerUid, String blockedUid) {
+    final docId = _blockDocId(blockerUid, blockedUid);
+    return _blocks.doc(docId).set({
+      'blockerUid': blockerUid,
+      'blockedUid': blockedUid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> unblockUser(String blockerUid, String blockedUid) {
+    final docId = _blockDocId(blockerUid, blockedUid);
+    return _blocks.doc(docId).delete();
+  }
+
+  Stream<bool> isBlocked(String blockerUid, String blockedUid) {
+    final docId = _blockDocId(blockerUid, blockedUid);
+    return _blocks.doc(docId).snapshots().map((snap) => snap.exists);
   }
 }
