@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../widgets/verified_badge.dart';
 import 'login_screen.dart';
 import 'admin_screen.dart';
 import 'wallet_screen.dart';
@@ -70,6 +71,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final followers = data?['followersCount'] ?? 0;
         final following = data?['followingCount'] ?? 0;
         final profileViews = data?['profileViews'] ?? 0;
+        final isVerified = data?['isVerified'] == true;
 
         final body = ListView(
           padding: const EdgeInsets.only(bottom: 24),
@@ -90,7 +92,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   borderRadius: BorderRadius.circular(18)),
               child: Stack(
                 children: [
-                  // Profile viewers badge — top-right corner, TikTok style
                   Positioned(
                     top: 0,
                     right: 0,
@@ -128,14 +129,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             size: 30, color: Colors.white),
                       ),
                       const SizedBox(height: 10),
-                      Text(
-                          state.nickname.isNotEmpty
-                              ? state.nickname
-                              : (state.username.isNotEmpty
-                                  ? state.username
-                                  : 'User'),
-                          style: const TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.bold)),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                              state.nickname.isNotEmpty
+                                  ? state.nickname
+                                  : (state.username.isNotEmpty
+                                      ? state.username
+                                      : 'User'),
+                              style: const TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                          if (isVerified) const VerifiedBadge(),
+                        ],
+                      ),
                       const SizedBox(height: 2),
                       Text('ID: ${state.uid}',
                           style: const TextStyle(
