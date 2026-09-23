@@ -31,11 +31,12 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       _loading = false;
     });
 
-    if (widget.targetUid != AppState.instance.uid) {
-      _fs.incrementProfileViews(widget.targetUid);
+        if (widget.targetUid != AppState.instance.uid) {
+      final myName = AppState.instance.nickname.isNotEmpty
+          ? AppState.instance.nickname
+          : AppState.instance.username;
+      _fs.recordProfileView(widget.targetUid, AppState.instance.uid, myName);
     }
-  }
-
   void _openMoreMenu() {
     final myUid = AppState.instance.uid;
     final name = _user?['nickname'] ?? _user?['username'] ?? 'User';
