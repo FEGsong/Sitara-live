@@ -36,6 +36,121 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     }
   }
 
+  void _openMoreMenu() {
+    final myUid = AppState.instance.uid;
+    final name = _user?['nickname'] ?? _user?['username'] ?? 'User';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              ListTile(
+                leading: const Icon(Icons.flag_outlined, color: AppColors.hot),
+                title: const Text('Report'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showReportDialog(myUid, name);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.qr_code, color: AppColors.muted),
+                title: const Text('QR Code'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      backgroundColor: AppColors.surface,
+                      title: const Text('QR Code'),
+                      content: Text('ID: ${widget.targetUid}\n(QR image coming soon)',
+                          style: const TextStyle(fontSize: 12.5)),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close')),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              StreamBuilder<bool>(
+                stream: _fs.isBlocked(myUid, widget.targetUid),
+                builder: (context, snap) {
+                  final blocked = snap.data ?? false;
+                  return ListTile(
+                    leading: Icon(Icons.block,
+                        color: blocked ? AppColors.gold : AppColors.hot),
+                    title: Text(blocked ? 'Unblock' : 'Block'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      if (blocked) {
+                        _fs.unblockUser(myUid, widget.targetUid);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('$name unblocked')));
+                      } else {
+                        _fs.blockUser(myUid, widget.targetUid);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('$name blocked')));
+                      }
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showReportDialog(String myUid, String name) {
+    const reasons = [
+      'Spam',
+      'Inappropriate content',
+      'Harassment or bullying',
+      'Fake account',
+      'Other',
+    ];
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: Text('Report $name'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: reasons
+              .map((r) => ListTile(
+                    title: Text(r, style: const TextStyle(fontSize: 13)),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _fs.reportUser(
+                        reporterUid: myUid,
+                        reportedUid: widget.targetUid,
+                        reportedName: name,
+                        reason: r,
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('✅ Report sent to Sitara Live team')),
+                        );
+                      }
+                    },
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final myUid = AppState.instance.uid;
@@ -56,7 +171,16 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     final isVerified = _user!['isVerified'] == true;
 
     return Scaffold(
-      appBar: AppBar(title: Text(nickname)),
+      appBar: AppBar(
+        title: Text(nickname),
+        actions: [
+          if (!isMe)
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: _openMoreMenu,
+            ),
+        ],
+      ),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
