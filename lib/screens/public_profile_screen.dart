@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/firestore_service.dart';
+import '../widgets/verified_badge.dart';
 
-/// Shown when you open someone ELSE's profile — e.g. tapping their
-/// name/avatar in a live room, or opening a profile via search.
-/// Shows their public info + a Follow/Following button (TikTok style).
 class PublicProfileScreen extends StatefulWidget {
   final String targetUid;
   const PublicProfileScreen({super.key, required this.targetUid});
@@ -33,7 +31,6 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
       _loading = false;
     });
 
-    // Count a profile view only when someone else opens this profile.
     if (widget.targetUid != AppState.instance.uid) {
       _fs.incrementProfileViews(widget.targetUid);
     }
@@ -56,6 +53,7 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
     final followers = _user!['followersCount'] ?? 0;
     final following = _user!['followingCount'] ?? 0;
     final isPublic = _user!['profilePublic'] ?? true;
+    final isVerified = _user!['isVerified'] == true;
 
     return Scaffold(
       appBar: AppBar(title: Text(nickname)),
@@ -78,9 +76,15 @@ class _PublicProfileScreenState extends State<PublicProfileScreen> {
                         const Icon(Icons.person, size: 36, color: Colors.white),
                   ),
                   const SizedBox(height: 10),
-                  Text(nickname,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(nickname,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      if (isVerified) const VerifiedBadge(),
+                    ],
+                  ),
                   const SizedBox(height: 2),
                   Text('@$username',
                       style:
