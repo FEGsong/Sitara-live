@@ -10,9 +10,8 @@ import '../widgets/coin_pill.dart';
 
 class LiveScreen extends StatefulWidget {
   final bool isHost;
-  final int seatCount; // used when isHost creates a brand-new room
-  final String? roomId; // required when joining an existing room,
-  // or when a host is rejoining their own already-live room
+  final int seatCount;
+  final String? roomId;
   final String? hostName;
 
   const LiveScreen({
@@ -66,9 +65,16 @@ class _LiveScreenState extends State<LiveScreen> {
   String? _selectedGift;
   bool _giftTrayOpen = false;
 
+  /// Agora numeric uids currently detected as speaking.
+  Set<int> _speakingAgoraUids = {};
+
   @override
   void initState() {
     super.initState();
+    _agora.onSpeakingUpdate = (speaking) {
+      if (!mounted) return;
+      setState(() => _speakingAgoraUids = speaking.toSet());
+    };
     if (widget.isHost) {
       if (widget.roomId != null) {
         _rejoinAsHost();
@@ -92,7 +98,7 @@ class _LiveScreenState extends State<LiveScreen> {
         hostName: name,
         seatCount: widget.seatCount,
       );
-      await _agora.joinChannel(channel: id, isHost: true);
+      await _agora.joinChannel(channel: id, isHost: true, myUid: uid);
       if (!mounted) return;
       setState(() {
         _roomId = id;
@@ -108,12 +114,11 @@ class _LiveScreenState extends State<LiveScreen> {
     }
   }
 
-  /// Host tapped "My Room" on Home to jump back into their still-live
-  /// room instead of creating a new one.
   Future<void> _rejoinAsHost() async {
     try {
       _roomId = widget.roomId;
-      await _agora.joinChannel(channel: _roomId!, isHost: true);
+      await _agora.joinChannel(
+          channel: _roomId!, isHost: true, myUid: AppState.instance.uid);
       if (!mounted) return;
       setState(() {
         _mySeatIndex = 0;
@@ -152,7 +157,8 @@ class _LiveScreenState extends State<LiveScreen> {
         );
       }
       await _firestore.incrementViewers(_roomId!, 1);
-      await _agora.joinChannel(channel: _roomId!, isHost: false);
+      await _agora.joinChannel(
+          channel: _roomId!, isHost: false, myUid: AppState.instance.uid);
       if (!mounted) return;
       setState(() => _connecting = false);
     } catch (e) {
@@ -440,11 +446,21 @@ class _LiveScreenState extends State<LiveScreen> {
             final seatData = seats[i] == null
                 ? null
                 : Map<String, dynamic>.from(seats[i] as Map);
+
+            // Is the person occupying this seat currently detected
+            // as speaking by Agora's volume indicator?
+            bool speaking = false;
+            if (seatData != null && seatData['uid'] != null) {
+              final agoraUid = AgoraService.uidToAgoraUid(seatData['uid'] as String);
+              speaking = _speakingAgoraUids.contains(agoraUid);
+            }
+
             return _SeatWidget(
               index: i,
               seat: seatData,
               isMe: seatData != null &&
                   seatData['uid'] == AppState.instance.uid,
+              isSpeaking: speaking,
               onTap: () => _onSeatTap(i, seatData),
             );
           },
@@ -620,66 +636,111 @@ class _LiveScreenState extends State<LiveScreen> {
   }
 }
 
-class _SeatWidget extends StatelessWidget {
+class _SeatWidget extends StatefulWidget {
   final int index;
   final Map<String, dynamic>? seat;
   final bool isMe;
+  final bool isSpeaking;
   final VoidCallback onTap;
 
   const _SeatWidget({
     required this.index,
     required this.seat,
     required this.isMe,
+    required this.isSpeaking,
     required this.onTap,
   });
 
   @override
+  State<_SeatWidget> createState() => _SeatWidgetState();
+}
+
+class _SeatWidgetState extends State<_SeatWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final occupied = seat != null;
-    final name = seat?['name'] as String?;
-    final isMuted = seat?['isMuted'] == true;
+    final occupied = widget.seat != null;
+    final name = widget.seat?['name'] as String?;
+    final isMuted = widget.seat?['isMuted'] == true;
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: occupied
-                  ? const LinearGradient(
-                      colors: [AppColors.hot, Color(0xFF7A1BFF)])
-                  : null,
-              color: occupied ? null : Colors.white.withOpacity(.06),
-              border: Border.all(
-                color: isMe
-                    ? AppColors.gold
-                    : (occupied ? Colors.transparent : AppColors.line),
-                width: isMe ? 2 : 1,
-              ),
-            ),
-            alignment: Alignment.center,
-            child: occupied
-                ? Text(
-                    name != null && name.isNotEmpty
-                        ? name[0].toUpperCase()
-                        : '?',
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white),
-                  )
-                : const Icon(Icons.add, size: 18, color: AppColors.muted),
+          AnimatedBuilder(
+            animation: _pulseCtrl,
+            builder: (context, child) {
+              final glow = widget.isSpeaking ? _pulseCtrl.value : 0.0;
+              return Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: occupied
+                      ? const LinearGradient(
+                          colors: [AppColors.hot, Color(0xFF7A1BFF)])
+                      : null,
+                  color: occupied ? null : Colors.white.withOpacity(.06),
+                  border: Border.all(
+                    color: widget.isSpeaking
+                        ? AppColors.cyan
+                        : (widget.isMe
+                            ? AppColors.gold
+                            : (occupied ? Colors.transparent : AppColors.line)),
+                    width: widget.isSpeaking ? 2.5 : (widget.isMe ? 2 : 1),
+                  ),
+                  boxShadow: widget.isSpeaking
+                      ? [
+                          BoxShadow(
+                            color: AppColors.cyan.withOpacity(0.15 + glow * 0.45),
+                            blurRadius: 6 + glow * 10,
+                            spreadRadius: 1 + glow * 4,
+                          ),
+                        ]
+                      : null,
+                ),
+                alignment: Alignment.center,
+                child: occupied
+                    ? Text(
+                        name != null && name.isNotEmpty
+                            ? name[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white),
+                      )
+                    : const Icon(Icons.add, size: 18, color: AppColors.muted),
+              );
+            },
           ),
           const SizedBox(height: 3),
           if (occupied)
             Icon(isMuted ? Icons.mic_off : Icons.mic,
-                size: 11, color: isMuted ? Colors.redAccent : AppColors.cyan)
+                size: 11,
+                color: widget.isSpeaking
+                    ? AppColors.cyan
+                    : (isMuted ? Colors.redAccent : AppColors.cyan))
           else
-            Text('Seat ${index + 1}',
+            Text('Seat ${widget.index + 1}',
                 style: const TextStyle(fontSize: 8, color: AppColors.muted)),
           if (occupied)
             SizedBox(
