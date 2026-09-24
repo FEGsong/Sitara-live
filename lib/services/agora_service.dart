@@ -10,11 +10,19 @@ class AgoraService {
   RtcEngine? _engine;
   RtcEngine? get engine => _engine;
 
-  /// Fetches a secure token from our own backend — never hardcode
-  /// the App Certificate in the app itself.
+  /// Called with the list of currently-speaking Agora uids (and
+  /// their volume) whenever Agora reports an audio volume update —
+  /// used to show a "speaking" ring around the active seat.
+  void Function(List<int> speakingUids)? onSpeakingUpdate;
+
+  /// Converts a Firestore uid (string) into a stable positive
+  /// integer Agora can use as a numeric uid — needed so we can
+  /// later match Agora's volume-indication uid back to a seat.
+  static int uidToAgoraUid(String uid) => uid.hashCode & 0x7FFFFFFF;
+
   Future<Map<String, dynamic>> _fetchToken({
     required String channel,
-    required String role, // 'host' or 'audience'
+    required String role,
   }) async {
     final uri = Uri.parse(
         '${AppConfig.tokenServerUrl}/rtc-token?channel=$channel&role=$role');
@@ -25,16 +33,11 @@ class AgoraService {
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
-  /// Joins an audio channel. [isHost] controls whether this device
-  /// starts able to speak (broadcaster) or starts as a silent
-  /// listener (audience) — use [setSpeakingRole] later to switch
-  /// a listener into a seat, or a seat-holder back to listening.
   Future<RtcEngine> joinChannel({
     required String channel,
     required bool isHost,
+    required String myUid,
   }) async {
-    // Request microphone permission before doing anything else —
-    // without this, Agora can silently hang on some Android versions.
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
       throw Exception('Microphone permission denied. Please allow microphone access in your phone settings.');
@@ -44,7 +47,23 @@ class AgoraService {
         channel: channel, role: isHost ? 'host' : 'audience');
     final engine = createAgoraRtcEngine();
     await engine.initialize(RtcEngineContext(appId: data['appId'] as String));
+
+    engine.registerEventHandler(
+      RtcEngineEventHandler(
+        onAudioVolumeIndication: (connection, speakers, speakerNumber, totalVolume) {
+          // Only report uids that are actually making noise, using a
+          // small threshold to ignore background/mic noise.
+          final speaking = speakers
+              .where((s) => s.volume != null && s.volume! > 15)
+              .map((s) => s.uid ?? 0)
+              .toList();
+          onSpeakingUpdate?.call(speaking);
+        },
+      ),
+    );
+
     await engine.enableAudio();
+    await engine.enableAudioVolumeIndication(interval: 300, smooth: 3, reportVad: true);
     await engine.setClientRole(
       role: isHost
           ? ClientRoleType.clientRoleBroadcaster
@@ -53,7 +72,7 @@ class AgoraService {
     await engine.joinChannel(
       token: data['token'] as String,
       channelId: channel,
-      uid: 0,
+      uid: uidToAgoraUid(myUid),
       options: ChannelMediaOptions(
         clientRoleType: isHost
             ? ClientRoleType.clientRoleBroadcaster
@@ -68,8 +87,6 @@ class AgoraService {
     return engine;
   }
 
-  /// Switches this device between "can speak" (seated) and
-  /// "listen only" — called when a user takes or leaves a seat.
   Future<void> setSpeakingRole(bool canSpeak) async {
     if (_engine == null) return;
     await _engine!.setClientRole(
@@ -80,8 +97,6 @@ class AgoraService {
     await _engine!.muteLocalAudioStream(!canSpeak);
   }
 
-  /// Mutes/unmutes this device's own microphone (only meaningful
-  /// while seated / broadcasting).
   Future<void> toggleMic(bool mute) async {
     await _engine?.muteLocalAudioStream(mute);
   }
