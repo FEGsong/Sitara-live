@@ -213,6 +213,7 @@ class FirestoreService {
       'hostName': hostName,
       'seatCount': seatCount,
       'seats': List<dynamic>.filled(seatCount, null, growable: true),
+      'lockedSeats': <int>[],
       'status': 'live',
       'viewers': 0,
       'c1': gradient[0],
@@ -319,6 +320,24 @@ class FirestoreService {
         'isMuted': isMuted,
       };
       tx.update(ref, {'seats': seats});
+    });
+  }
+
+  // ---- Seat locking (host control) ----
+
+  Future<void> toggleSeatLock(String roomId, int seatIndex, bool locked) async {
+    final ref = _rooms.doc(roomId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final lockedSeats = List<int>.from(data['lockedSeats'] ?? []);
+      if (locked && !lockedSeats.contains(seatIndex)) {
+        lockedSeats.add(seatIndex);
+      } else if (!locked) {
+        lockedSeats.remove(seatIndex);
+      }
+      tx.update(ref, {'lockedSeats': lockedSeats});
     });
   }
 
@@ -465,8 +484,6 @@ class FirestoreService {
   CollectionReference _profileViewersCol(String uid) =>
       _users.doc(uid).collection('profile_viewers');
 
-  /// Records that [viewerUid] viewed [uid]'s profile, and bumps the
-  /// profileViews counter only the first time this viewer is seen.
   Future<void> recordProfileView(String uid, String viewerUid, String viewerName) async {
     if (uid == viewerUid) return;
     final ref = _profileViewersCol(uid).doc(viewerUid);
@@ -481,7 +498,6 @@ class FirestoreService {
     });
   }
 
-  /// Newest-first list of people who viewed [uid]'s profile.
   Stream<List<Map<String, dynamic>>> profileViewersOf(String uid) {
     return _profileViewersCol(uid)
         .orderBy('viewedAt', descending: true)
