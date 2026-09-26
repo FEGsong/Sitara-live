@@ -65,7 +65,6 @@ class _LiveScreenState extends State<LiveScreen> {
   String? _selectedGift;
   bool _giftTrayOpen = false;
 
-  /// Agora numeric uids currently detected as speaking.
   Set<int> _speakingAgoraUids = {};
 
   @override
@@ -195,7 +194,83 @@ class _LiveScreenState extends State<LiveScreen> {
     });
   }
 
-  Future<void> _onSeatTap(int index, Map<String, dynamic>? seatData) async {
+  Future<void> _takeSeatAsMe(int index) async {
+    final uid = AppState.instance.uid;
+    final name = AppState.instance.nickname.isNotEmpty
+        ? AppState.instance.nickname
+        : 'Guest';
+    await _firestore.takeSeat(_roomId!, index, uid, name);
+    await _agora.setSpeakingRole(true);
+    if (mounted) setState(() => _mySeatIndex = index);
+    _addChat('System', '$name joined the seat 🎙', false);
+  }
+
+  void _showHostSeatMenu(int index, bool isLocked) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              _hostMenuItem('Invite to the microphone', () {
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invite by ID — coming soon')),
+                );
+              }),
+              const Divider(height: 1),
+              _hostMenuItem(isLocked ? 'Unlock Mic' : 'Mic Locked', () {
+                Navigator.pop(ctx);
+                _firestore.toggleSeatLock(_roomId!, index, !isLocked);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content: Text(isLocked ? 'Seat unlocked' : 'Seat locked')),
+                );
+              }),
+              const Divider(height: 1),
+              _hostMenuItem('Get on the microphone by yourself', () {
+                Navigator.pop(ctx);
+                if (_mySeatIndex != null) {
+                  _firestore.leaveSeat(_roomId!, _mySeatIndex!);
+                }
+                _takeSeatAsMe(index);
+              }),
+              const Divider(height: 1),
+              _hostMenuItem('Cancel', () => Navigator.pop(ctx), isCancel: true),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _hostMenuItem(String text, VoidCallback onTap, {bool isCancel = false}) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 15,
+            color: isCancel ? Colors.grey : Colors.black87,
+            fontWeight: isCancel ? FontWeight.normal : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onSeatTap(
+      int index, Map<String, dynamic>? seatData, List<int> lockedSeats) async {
     if (_roomId == null) return;
     final uid = AppState.instance.uid;
 
@@ -211,18 +286,22 @@ class _LiveScreenState extends State<LiveScreen> {
       return;
     }
 
+    if (widget.isHost) {
+      _showHostSeatMenu(index, lockedSeats.contains(index));
+      return;
+    }
+
+    if (lockedSeats.contains(index)) {
+      _snack('This seat is locked by the host');
+      return;
+    }
+
     if (_mySeatIndex != null) {
       _snack('Leave your current seat first');
       return;
     }
 
-    final name = AppState.instance.nickname.isNotEmpty
-        ? AppState.instance.nickname
-        : 'Guest';
-    await _firestore.takeSeat(_roomId!, index, uid, name);
-    await _agora.setSpeakingRole(true);
-    if (mounted) setState(() => _mySeatIndex = index);
-    _addChat('System', '$name joined the seat 🎙', false);
+    await _takeSeatAsMe(index);
   }
 
   Future<void> _toggleMic() async {
@@ -432,6 +511,7 @@ class _LiveScreenState extends State<LiveScreen> {
         }
         final data = snap.data!.data() as Map<String, dynamic>;
         final seats = List<dynamic>.from(data['seats'] ?? []);
+        final lockedSeats = List<int>.from(data['lockedSeats'] ?? []);
 
         return GridView.builder(
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -447,11 +527,10 @@ class _LiveScreenState extends State<LiveScreen> {
                 ? null
                 : Map<String, dynamic>.from(seats[i] as Map);
 
-            // Is the person occupying this seat currently detected
-            // as speaking by Agora's volume indicator?
             bool speaking = false;
             if (seatData != null && seatData['uid'] != null) {
-              final agoraUid = AgoraService.uidToAgoraUid(seatData['uid'] as String);
+              final agoraUid =
+                  AgoraService.uidToAgoraUid(seatData['uid'] as String);
               speaking = _speakingAgoraUids.contains(agoraUid);
             }
 
@@ -461,7 +540,8 @@ class _LiveScreenState extends State<LiveScreen> {
               isMe: seatData != null &&
                   seatData['uid'] == AppState.instance.uid,
               isSpeaking: speaking,
-              onTap: () => _onSeatTap(i, seatData),
+              isLocked: lockedSeats.contains(i),
+              onTap: () => _onSeatTap(i, seatData, lockedSeats),
             );
           },
         );
@@ -641,6 +721,7 @@ class _SeatWidget extends StatefulWidget {
   final Map<String, dynamic>? seat;
   final bool isMe;
   final bool isSpeaking;
+  final bool isLocked;
   final VoidCallback onTap;
 
   const _SeatWidget({
@@ -648,6 +729,7 @@ class _SeatWidget extends StatefulWidget {
     required this.seat,
     required this.isMe,
     required this.isSpeaking,
+    required this.isLocked,
     required this.onTap,
   });
 
@@ -710,7 +792,8 @@ class _SeatWidgetState extends State<_SeatWidget>
                   boxShadow: widget.isSpeaking
                       ? [
                           BoxShadow(
-                            color: AppColors.cyan.withOpacity(0.15 + glow * 0.45),
+                            color:
+                                AppColors.cyan.withOpacity(0.15 + glow * 0.45),
                             blurRadius: 6 + glow * 10,
                             spreadRadius: 1 + glow * 4,
                           ),
@@ -728,7 +811,9 @@ class _SeatWidgetState extends State<_SeatWidget>
                             fontWeight: FontWeight.bold,
                             color: Colors.white),
                       )
-                    : const Icon(Icons.add, size: 18, color: AppColors.muted),
+                    : (widget.isLocked
+                        ? const Icon(Icons.lock, size: 16, color: AppColors.muted)
+                        : const Icon(Icons.add, size: 18, color: AppColors.muted)),
               );
             },
           ),
@@ -740,8 +825,10 @@ class _SeatWidgetState extends State<_SeatWidget>
                     ? AppColors.cyan
                     : (isMuted ? Colors.redAccent : AppColors.cyan))
           else
-            Text('Seat ${widget.index + 1}',
-                style: const TextStyle(fontSize: 8, color: AppColors.muted)),
+            Text(
+              widget.isLocked ? 'Locked' : 'Seat ${widget.index + 1}',
+              style: const TextStyle(fontSize: 8, color: AppColors.muted),
+            ),
           if (occupied)
             SizedBox(
               width: 50,
