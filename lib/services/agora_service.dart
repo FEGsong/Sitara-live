@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,14 +11,17 @@ class AgoraService {
   RtcEngine? _engine;
   RtcEngine? get engine => _engine;
 
-  /// Called with the list of currently-speaking Agora uids (and
-  /// their volume) whenever Agora reports an audio volume update —
-  /// used to show a "speaking" ring around the active seat.
+  int _myAgoraUid = 0;
+
+  /// Called with the Agora uids currently detected as speaking —
+  /// used to show the "speaking" ring around a seat.
   void Function(List<int> speakingUids)? onSpeakingUpdate;
 
-  /// Converts a Firestore uid (string) into a stable positive
-  /// integer Agora can use as a numeric uid — needed so we can
-  /// later match Agora's volume-indication uid back to a seat.
+  // ---- Room music state (read by the Music sheet) ----
+  final ValueNotifier<String?> musicName = ValueNotifier<String?>(null);
+  final ValueNotifier<bool> musicPlaying = ValueNotifier<bool>(false);
+  int musicVolume = 60;
+
   static int uidToAgoraUid(String uid) => uid.hashCode & 0x7FFFFFFF;
 
   Future<Map<String, dynamic>> _fetchToken({
@@ -40,8 +44,11 @@ class AgoraService {
   }) async {
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
-      throw Exception('Microphone permission denied. Please allow microphone access in your phone settings.');
+      throw Exception(
+          'Microphone permission denied. Please allow microphone access in your phone settings.');
     }
+
+    _myAgoraUid = uidToAgoraUid(myUid);
 
     final data = await _fetchToken(
         channel: channel, role: isHost ? 'host' : 'audience');
@@ -51,19 +58,28 @@ class AgoraService {
     engine.registerEventHandler(
       RtcEngineEventHandler(
         onAudioVolumeIndication: (connection, speakers, speakerNumber, totalVolume) {
-          // Only report uids that are actually making noise, using a
-          // small threshold to ignore background/mic noise.
           final speaking = speakers
-              .where((s) => s.volume != null && s.volume! > 15)
-              .map((s) => s.uid ?? 0)
-              .toList();
+              .where((s) => (s.volume ?? 0) > 15)
+              .map((s) {
+            final u = s.uid ?? 0;
+            // Agora reports the local user as uid 0.
+            return u == 0 ? _myAgoraUid : u;
+          }).toList();
           onSpeakingUpdate?.call(speaking);
+        },
+        onAudioMixingStateChanged: (state, reason) {
+          if (state == AudioMixingStateType.audioMixingStateStopped ||
+              state == AudioMixingStateType.audioMixingStateFailed) {
+            musicPlaying.value = false;
+            musicName.value = null;
+          }
         },
       ),
     );
 
     await engine.enableAudio();
-    await engine.enableAudioVolumeIndication(interval: 300, smooth: 3, reportVad: true);
+    await engine.enableAudioVolumeIndication(
+        interval: 300, smooth: 3, reportVad: true);
     await engine.setClientRole(
       role: isHost
           ? ClientRoleType.clientRoleBroadcaster
@@ -72,7 +88,7 @@ class AgoraService {
     await engine.joinChannel(
       token: data['token'] as String,
       channelId: channel,
-      uid: uidToAgoraUid(myUid),
+      uid: _myAgoraUid,
       options: ChannelMediaOptions(
         clientRoleType: isHost
             ? ClientRoleType.clientRoleBroadcaster
@@ -95,15 +111,52 @@ class AgoraService {
           : ClientRoleType.clientRoleAudience,
     );
     await _engine!.muteLocalAudioStream(!canSpeak);
+    if (canSpeak) await _engine!.adjustRecordingSignalVolume(100);
   }
 
+  /// Mutes only the microphone voice (the stream keeps publishing) so
+  /// music mixed into the stream keeps playing while the host is muted.
   Future<void> toggleMic(bool mute) async {
-    await _engine?.muteLocalAudioStream(mute);
+    await _engine?.adjustRecordingSignalVolume(mute ? 0 : 100);
+  }
+
+  // ---- Music (plays a file from this phone into the room) ----
+
+  Future<void> startMusic(String path, String name) async {
+    final e = _engine;
+    if (e == null) throw Exception('Not connected to the room');
+    await e.startAudioMixing(filePath: path, loopback: false, cycle: 1);
+    await e.adjustAudioMixingVolume(musicVolume);
+    musicName.value = name;
+    musicPlaying.value = true;
+  }
+
+  Future<void> pauseMusic() async {
+    await _engine?.pauseAudioMixing();
+    musicPlaying.value = false;
+  }
+
+  Future<void> resumeMusic() async {
+    await _engine?.resumeAudioMixing();
+    musicPlaying.value = true;
+  }
+
+  Future<void> stopMusic() async {
+    await _engine?.stopAudioMixing();
+    musicPlaying.value = false;
+    musicName.value = null;
+  }
+
+  Future<void> setMusicVolume(int v) async {
+    musicVolume = v;
+    await _engine?.adjustAudioMixingVolume(v);
   }
 
   Future<void> leaveChannel() async {
     await _engine?.leaveChannel();
     await _engine?.release();
     _engine = null;
+    musicPlaying.value = false;
+    musicName.value = null;
   }
 }
