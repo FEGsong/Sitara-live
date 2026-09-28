@@ -9,6 +9,7 @@ import '../services/agora_service.dart';
 import '../services/firestore_service.dart';
 import '../widgets/coin_pill.dart';
 import '../widgets/room_users_sheet.dart';
+import 'room_settings_screen.dart';
 
 class LiveScreen extends StatefulWidget {
   final bool isHost;
@@ -76,6 +77,10 @@ class _LiveScreenState extends State<LiveScreen> {
   bool _leaving = false;
   bool _countedViewer = false;
   bool _registeredListener = false;
+
+  /// True when the host made me an admin of this room.
+  bool _isRoomAdmin = false;
+  bool get _canManage => widget.isHost || _isRoomAdmin;
 
   // Cached so StreamBuilders don't re-subscribe on every rebuild
   // (the speaking indicator rebuilds this screen ~3x per second).
@@ -181,15 +186,33 @@ class _LiveScreenState extends State<LiveScreen> {
 
       final snap = await _firestore.getRoomOnce(_roomId!);
       final data = snap.data() as Map<String, dynamic>?;
-      if (data != null) {
-        _firestore.recordRecentRoom(
-          uid: uid,
-          roomId: _roomId!,
-          hostName: data['hostName'] ?? widget.hostName ?? 'Host',
-          c1: data['c1'] ?? 0xFF7A1BFF,
-          c2: data['c2'] ?? 0xFFFF2E6B,
-        );
+      if (data == null || data['status'] == 'ended') {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'This live has ended.';
+          _connecting = false;
+        });
+        return;
       }
+
+      // Room lock: only the admins the host added can enter.
+      final admins = List<String>.from(data['adminUids'] ?? []);
+      if (data['roomLocked'] == true && !admins.contains(uid)) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'This room is locked by the host.';
+          _connecting = false;
+        });
+        return;
+      }
+
+      _firestore.recordRecentRoom(
+        uid: uid,
+        roomId: _roomId!,
+        hostName: data['hostName'] ?? widget.hostName ?? 'Host',
+        c1: data['c1'] ?? 0xFF7A1BFF,
+        c2: data['c2'] ?? 0xFFFF2E6B,
+      );
 
       await _firestore.incrementViewers(_roomId!, 1);
       _countedViewer = true;
@@ -200,6 +223,12 @@ class _LiveScreenState extends State<LiveScreen> {
       if (!mounted) return;
       setState(() => _connecting = false);
       _startRoomListeners();
+
+      // Welcome message written by the room owner.
+      final welcome = ((data['welcomeMessage'] ?? '') as String).trim();
+      if (welcome.isNotEmpty) {
+        _addChat(data['hostName'] ?? widget.hostName ?? 'Host', welcome, false);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -209,9 +238,9 @@ class _LiveScreenState extends State<LiveScreen> {
     }
   }
 
-  /// Watches the room document (seat changes, room ended) and — for
-  /// listeners — their own presence doc, which the host deletes when
-  /// kicking or banning them.
+  /// Watches the room document (seat changes, admin role, room ended)
+  /// and — for listeners — their own presence doc, which the host or an
+  /// admin deletes when kicking or banning them.
   void _startRoomListeners() {
     if (_roomId == null) return;
     final myUid = AppState.instance.uid;
@@ -225,6 +254,21 @@ class _LiveScreenState extends State<LiveScreen> {
       if (!widget.isHost && data['status'] == 'ended') {
         _exitWithMessage('The host ended this live');
         return;
+      }
+
+      // Did the host add or remove me as an admin?
+      if (!widget.isHost) {
+        final admins = List<String>.from(data['adminUids'] ?? []);
+        final nowAdmin = admins.contains(myUid);
+        if (nowAdmin != _isRoomAdmin) {
+          setState(() => _isRoomAdmin = nowAdmin);
+          _addChat(
+              'System',
+              nowAdmin
+                  ? 'The host made you an admin 🛡'
+                  : 'You are no longer an admin',
+              false);
+        }
       }
 
       final seats = List<dynamic>.from(data['seats'] ?? []);
@@ -255,7 +299,7 @@ class _LiveScreenState extends State<LiveScreen> {
         if (present) {
           _sawSelfPresence = true;
         } else if (_sawSelfPresence) {
-          _exitWithMessage('You were removed from this room by the host');
+          _exitWithMessage('You were removed from this room');
         }
       });
     }
@@ -301,13 +345,18 @@ class _LiveScreenState extends State<LiveScreen> {
 
   // ---------------- seats ----------------
 
-  Future<void> _takeSeatAsHost(int index) async {
+  Future<void> _takeSeatDirect(int index) async {
     await _firestore.takeSeat(_roomId!, index, AppState.instance.uid, _myName);
     await _agora.setSpeakingRole(true);
-    if (mounted) setState(() => _mySeatIndex = index);
+    if (mounted) {
+      setState(() {
+        _mySeatIndex = index;
+        _micMuted = false;
+      });
+    }
   }
 
-  void _showHostSeatMenu(int index, bool isLocked) {
+  void _showManageSeatMenu(int index, bool isLocked) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -320,26 +369,26 @@ class _LiveScreenState extends State<LiveScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 8),
-              _hostMenuItem('Invite to the microphone', () {
+              _menuItem('Invite to the microphone', () {
                 Navigator.pop(ctx);
                 _openRoomUsers(inviteSeatIndex: index);
               }),
               const Divider(height: 1),
-              _hostMenuItem(isLocked ? 'Unlock Mic' : 'Mic Locked', () {
+              _menuItem(isLocked ? 'Unlock Mic' : 'Mic Locked', () {
                 Navigator.pop(ctx);
                 _firestore.toggleSeatLock(_roomId!, index, !isLocked);
                 _snack(isLocked ? 'Seat unlocked' : 'Seat locked');
               }),
               const Divider(height: 1),
-              _hostMenuItem('Get on the microphone by yourself', () async {
+              _menuItem('Get on the microphone by yourself', () async {
                 Navigator.pop(ctx);
                 if (_mySeatIndex != null) {
                   await _firestore.leaveSeat(_roomId!, _mySeatIndex!);
                 }
-                await _takeSeatAsHost(index);
+                await _takeSeatDirect(index);
               }),
               const Divider(height: 1),
-              _hostMenuItem('Cancel', () => Navigator.pop(ctx), isCancel: true),
+              _menuItem('Cancel', () => Navigator.pop(ctx), isCancel: true),
               const SizedBox(height: 8),
             ],
           ),
@@ -348,7 +397,7 @@ class _LiveScreenState extends State<LiveScreen> {
     );
   }
 
-  Widget _hostMenuItem(String text, VoidCallback onTap, {bool isCancel = false}) {
+  Widget _menuItem(String text, VoidCallback onTap, {bool isCancel = false}) {
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -387,9 +436,9 @@ class _LiveScreenState extends State<LiveScreen> {
       return;
     }
 
-    // Host tapping an empty seat → control menu.
-    if (widget.isHost) {
-      _showHostSeatMenu(index, lockedSeats.contains(index));
+    // Host / room admin tapping an empty seat → control menu.
+    if (_canManage) {
+      _showManageSeatMenu(index, lockedSeats.contains(index));
       return;
     }
 
@@ -428,81 +477,17 @@ class _LiveScreenState extends State<LiveScreen> {
       ),
       builder: (_) => RoomUsersSheet(
         roomId: _roomId!,
-        isHost: widget.isHost,
+        isHost: _canManage,
         inviteSeatIndex: inviteSeatIndex,
       ),
     );
   }
 
   void _openSettings() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Rename room'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _renameRoom();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.lock_outline),
-              title: const Text('Lock all seats'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _firestore.setAllSeatsLocked(_roomId!, true);
-                _snack('All seats locked');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.lock_open),
-              title: const Text('Unlock all seats'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _firestore.setAllSeatsLocked(_roomId!, false);
-                _snack('All seats unlocked');
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _renameRoom() {
-    final ctrl = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Rename room'),
-        content: TextField(
-          controller: ctrl,
-          maxLength: 30,
-          decoration: const InputDecoration(hintText: 'Room name'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              final name = ctrl.text.trim();
-              Navigator.pop(ctx);
-              if (name.isNotEmpty) _firestore.updateRoomName(_roomId!, name);
-            },
-            child: const Text('Save'),
-          ),
-        ],
+    if (_roomId == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RoomSettingsScreen(roomId: _roomId!, agora: _agora),
       ),
     );
   }
@@ -527,7 +512,7 @@ class _LiveScreenState extends State<LiveScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 8),
-            _hostMenuItem('Minimize (live stays on)', () {
+            _menuItem('Minimize (live stays on)', () {
               Navigator.pop(ctx);
               Navigator.of(context).pop();
             }),
@@ -552,7 +537,7 @@ class _LiveScreenState extends State<LiveScreen> {
               ),
             ),
             const Divider(height: 1),
-            _hostMenuItem('Cancel', () => Navigator.pop(ctx), isCancel: true),
+            _menuItem('Cancel', () => Navigator.pop(ctx), isCancel: true),
             const SizedBox(height: 8),
           ],
         ),
@@ -591,8 +576,10 @@ class _LiveScreenState extends State<LiveScreen> {
     });
   }
 
-  void _snack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   // ---------------- build ----------------
 
@@ -716,6 +703,7 @@ class _LiveScreenState extends State<LiveScreen> {
           final data = snap.data?.data() as Map<String, dynamic>?;
           final hostName = data?['hostName'] ?? widget.hostName ?? 'Host';
           final roomName = data?['roomName'] ?? "$hostName's Room";
+          final coverUrl = (data?['coverUrl'] ?? '') as String;
           final idText =
               _roomId!.length > 7 ? _roomId!.substring(0, 7) : _roomId!;
 
@@ -732,13 +720,22 @@ class _LiveScreenState extends State<LiveScreen> {
                       Container(
                         width: 34,
                         height: 34,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                              colors: [AppColors.hot, Color(0xFF7A1BFF)]),
+                        decoration: BoxDecoration(
+                          gradient: coverUrl.isEmpty
+                              ? const LinearGradient(
+                                  colors: [AppColors.hot, Color(0xFF7A1BFF)])
+                              : null,
                           shape: BoxShape.circle,
+                          image: coverUrl.isNotEmpty
+                              ? DecorationImage(
+                                  image: NetworkImage(coverUrl),
+                                  fit: BoxFit.cover)
+                              : null,
                         ),
                         alignment: Alignment.center,
-                        child: const Text('🎙', style: TextStyle(fontSize: 14)),
+                        child: coverUrl.isEmpty
+                            ? const Text('🎙', style: TextStyle(fontSize: 14))
+                            : null,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
