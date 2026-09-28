@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/agora_service.dart';
 import '../services/firestore_service.dart';
 import '../widgets/coin_pill.dart';
+import '../widgets/room_users_sheet.dart';
 
 class LiveScreen extends StatefulWidget {
   final bool isHost;
@@ -67,6 +69,27 @@ class _LiveScreenState extends State<LiveScreen> {
 
   Set<int> _speakingAgoraUids = {};
 
+  StreamSubscription<DocumentSnapshot>? _roomSub;
+  StreamSubscription<bool>? _presenceSub;
+  bool _sawSelfPresence = false;
+  bool _endRoomOnExit = false;
+  bool _leaving = false;
+  bool _countedViewer = false;
+  bool _registeredListener = false;
+
+  // Cached so StreamBuilders don't re-subscribe on every rebuild
+  // (the speaking indicator rebuilds this screen ~3x per second).
+  Stream<DocumentSnapshot>? _topStream;
+  Stream<DocumentSnapshot>? _seatsStream;
+  Stream<List<Map<String, dynamic>>>? _countStream;
+
+  String get _myName {
+    final s = AppState.instance;
+    if (s.nickname.isNotEmpty) return s.nickname;
+    if (s.username.isNotEmpty) return s.username;
+    return widget.isHost ? 'Host' : 'Guest';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -89,21 +112,19 @@ class _LiveScreenState extends State<LiveScreen> {
   Future<void> _createRoomAndJoin() async {
     try {
       final uid = AppState.instance.uid;
-      final name = AppState.instance.nickname.isNotEmpty
-          ? AppState.instance.nickname
-          : 'Host';
       final id = await _firestore.createRoom(
         hostUid: uid,
-        hostName: name,
+        hostName: _myName,
         seatCount: widget.seatCount,
       );
+      _roomId = id;
       await _agora.joinChannel(channel: id, isHost: true, myUid: uid);
       if (!mounted) return;
       setState(() {
-        _roomId = id;
         _mySeatIndex = 0;
         _connecting = false;
       });
+      _startRoomListeners();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -123,12 +144,12 @@ class _LiveScreenState extends State<LiveScreen> {
         _mySeatIndex = 0;
         _connecting = false;
       });
+      _startRoomListeners();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _errorMessage = 'Could not rejoin room: $e';
         _connecting = false;
-        _roomId = null;
       });
     }
   }
@@ -144,44 +165,128 @@ class _LiveScreenState extends State<LiveScreen> {
       return;
     }
     try {
+      final uid = AppState.instance.uid;
+
+      final reason = await _firestore.entryBlockReason(_roomId!, uid);
+      if (reason != null) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = reason == 'banned'
+              ? 'You are banned from this room.'
+              : 'You were removed from this room. Please try again later.';
+          _connecting = false;
+        });
+        return;
+      }
+
       final snap = await _firestore.getRoomOnce(_roomId!);
       final data = snap.data() as Map<String, dynamic>?;
       if (data != null) {
         _firestore.recordRecentRoom(
-          uid: AppState.instance.uid,
+          uid: uid,
           roomId: _roomId!,
           hostName: data['hostName'] ?? widget.hostName ?? 'Host',
           c1: data['c1'] ?? 0xFF7A1BFF,
           c2: data['c2'] ?? 0xFFFF2E6B,
         );
       }
+
       await _firestore.incrementViewers(_roomId!, 1);
-      await _agora.joinChannel(
-          channel: _roomId!, isHost: false, myUid: AppState.instance.uid);
+      _countedViewer = true;
+      await _firestore.joinRoomAsListener(_roomId!, uid, _myName);
+      _registeredListener = true;
+
+      await _agora.joinChannel(channel: _roomId!, isHost: false, myUid: uid);
       if (!mounted) return;
       setState(() => _connecting = false);
+      _startRoomListeners();
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _errorMessage = 'Could not connect: $e';
         _connecting = false;
-        _roomId = null;
       });
     }
   }
 
-  @override
-  void dispose() {
-    if (_roomId != null) {
-      if (widget.isHost) {
-        _firestore.endRoom(_roomId!);
-      } else {
-        _firestore.incrementViewers(_roomId!, -1);
-        if (_mySeatIndex != null) {
-          _firestore.leaveSeat(_roomId!, _mySeatIndex!);
+  /// Watches the room document (seat changes, room ended) and — for
+  /// listeners — their own presence doc, which the host deletes when
+  /// kicking or banning them.
+  void _startRoomListeners() {
+    if (_roomId == null) return;
+    final myUid = AppState.instance.uid;
+
+    _roomSub?.cancel();
+    _roomSub = _firestore.roomDoc(_roomId!).listen((snap) async {
+      if (!mounted) return;
+      final data = snap.data() as Map<String, dynamic>?;
+      if (data == null) return;
+
+      if (!widget.isHost && data['status'] == 'ended') {
+        _exitWithMessage('The host ended this live');
+        return;
+      }
+
+      final seats = List<dynamic>.from(data['seats'] ?? []);
+      final idx = seats.indexWhere((s) => s is Map && s['uid'] == myUid);
+      final newIdx = idx == -1 ? null : idx;
+      if (newIdx == _mySeatIndex) return;
+
+      final wasSeated = _mySeatIndex != null;
+      setState(() {
+        _mySeatIndex = newIdx;
+        if (newIdx != null && !wasSeated) _micMuted = false;
+      });
+
+      if (!widget.isHost) {
+        if (newIdx != null && !wasSeated) {
+          await _agora.setSpeakingRole(true);
+          _addChat('System', 'You are on the mic 🎙', false);
+        } else if (newIdx == null && wasSeated) {
+          await _agora.setSpeakingRole(false);
         }
       }
+    });
+
+    if (!widget.isHost) {
+      _presenceSub?.cancel();
+      _presenceSub =
+          _firestore.isListenerPresent(_roomId!, myUid).listen((present) {
+        if (present) {
+          _sawSelfPresence = true;
+        } else if (_sawSelfPresence) {
+          _exitWithMessage('You were removed from this room by the host');
+        }
+      });
     }
+  }
+
+  void _exitWithMessage(String message) {
+    if (_leaving || !mounted) return;
+    _leaving = true;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+    Navigator.of(context).pop();
+  }
+
+  @override
+  void dispose() {
+    _roomSub?.cancel();
+    _presenceSub?.cancel();
+
+    final roomId = _roomId;
+    final uid = AppState.instance.uid;
+    if (roomId != null) {
+      if (widget.isHost) {
+        if (_endRoomOnExit) _firestore.endRoom(roomId);
+      } else {
+        if (_countedViewer) _firestore.incrementViewers(roomId, -1);
+        if (_registeredListener) _firestore.leaveRoomAsListener(roomId, uid);
+        if (_mySeatIndex != null) _firestore.leaveSeat(roomId, _mySeatIndex!);
+        _firestore.cancelMicRequest(roomId, uid);
+      }
+    }
+    _chatCtrl.dispose();
     _agora.leaveChannel();
     super.dispose();
   }
@@ -194,15 +299,12 @@ class _LiveScreenState extends State<LiveScreen> {
     });
   }
 
-  Future<void> _takeSeatAsMe(int index) async {
-    final uid = AppState.instance.uid;
-    final name = AppState.instance.nickname.isNotEmpty
-        ? AppState.instance.nickname
-        : 'Guest';
-    await _firestore.takeSeat(_roomId!, index, uid, name);
+  // ---------------- seats ----------------
+
+  Future<void> _takeSeatAsHost(int index) async {
+    await _firestore.takeSeat(_roomId!, index, AppState.instance.uid, _myName);
     await _agora.setSpeakingRole(true);
     if (mounted) setState(() => _mySeatIndex = index);
-    _addChat('System', '$name joined the seat 🎙', false);
   }
 
   void _showHostSeatMenu(int index, bool isLocked) {
@@ -220,26 +322,21 @@ class _LiveScreenState extends State<LiveScreen> {
               const SizedBox(height: 8),
               _hostMenuItem('Invite to the microphone', () {
                 Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invite by ID — coming soon')),
-                );
+                _openRoomUsers(inviteSeatIndex: index);
               }),
               const Divider(height: 1),
               _hostMenuItem(isLocked ? 'Unlock Mic' : 'Mic Locked', () {
                 Navigator.pop(ctx);
                 _firestore.toggleSeatLock(_roomId!, index, !isLocked);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                      content: Text(isLocked ? 'Seat unlocked' : 'Seat locked')),
-                );
+                _snack(isLocked ? 'Seat unlocked' : 'Seat locked');
               }),
               const Divider(height: 1),
-              _hostMenuItem('Get on the microphone by yourself', () {
+              _hostMenuItem('Get on the microphone by yourself', () async {
                 Navigator.pop(ctx);
                 if (_mySeatIndex != null) {
-                  _firestore.leaveSeat(_roomId!, _mySeatIndex!);
+                  await _firestore.leaveSeat(_roomId!, _mySeatIndex!);
                 }
-                _takeSeatAsMe(index);
+                await _takeSeatAsHost(index);
               }),
               const Divider(height: 1),
               _hostMenuItem('Cancel', () => Navigator.pop(ctx), isCancel: true),
@@ -256,13 +353,16 @@ class _LiveScreenState extends State<LiveScreen> {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 15,
-            color: isCancel ? Colors.grey : Colors.black87,
-            fontWeight: isCancel ? FontWeight.normal : FontWeight.w500,
+        child: SizedBox(
+          width: double.infinity,
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              color: isCancel ? Colors.grey : Colors.black87,
+              fontWeight: isCancel ? FontWeight.normal : FontWeight.w500,
+            ),
           ),
         ),
       ),
@@ -274,9 +374,10 @@ class _LiveScreenState extends State<LiveScreen> {
     if (_roomId == null) return;
     final uid = AppState.instance.uid;
 
+    // Tapping my own seat → step down.
     if (seatData != null && seatData['uid'] == uid) {
       await _firestore.leaveSeat(_roomId!, index);
-      await _agora.setSpeakingRole(false);
+      if (!widget.isHost) await _agora.setSpeakingRole(false);
       if (mounted) setState(() => _mySeatIndex = null);
       return;
     }
@@ -286,22 +387,23 @@ class _LiveScreenState extends State<LiveScreen> {
       return;
     }
 
+    // Host tapping an empty seat → control menu.
     if (widget.isHost) {
       _showHostSeatMenu(index, lockedSeats.contains(index));
       return;
     }
 
+    // Viewer tapping an empty seat → send a mic request to the host.
     if (lockedSeats.contains(index)) {
       _snack('This seat is locked by the host');
       return;
     }
-
     if (_mySeatIndex != null) {
       _snack('Leave your current seat first');
       return;
     }
-
-    await _takeSeatAsMe(index);
+    await _firestore.requestMic(_roomId!, uid, _myName, index);
+    _snack('Mic request sent to the host');
   }
 
   Future<void> _toggleMic() async {
@@ -312,6 +414,153 @@ class _LiveScreenState extends State<LiveScreen> {
       await _firestore.toggleSeatMute(_roomId!, _mySeatIndex!, newMuted);
     }
   }
+
+  // ---------------- top bar actions ----------------
+
+  void _openRoomUsers({int? inviteSeatIndex}) {
+    if (_roomId == null) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => RoomUsersSheet(
+        roomId: _roomId!,
+        isHost: widget.isHost,
+        inviteSeatIndex: inviteSeatIndex,
+      ),
+    );
+  }
+
+  void _openSettings() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Rename room'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _renameRoom();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_outline),
+              title: const Text('Lock all seats'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _firestore.setAllSeatsLocked(_roomId!, true);
+                _snack('All seats locked');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.lock_open),
+              title: const Text('Unlock all seats'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _firestore.setAllSeatsLocked(_roomId!, false);
+                _snack('All seats unlocked');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _renameRoom() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Rename room'),
+        content: TextField(
+          controller: ctrl,
+          maxLength: 30,
+          decoration: const InputDecoration(hintText: 'Room name'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              final name = ctrl.text.trim();
+              Navigator.pop(ctx);
+              if (name.isNotEmpty) _firestore.updateRoomName(_roomId!, name);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _shareRoom() {
+    Share.share('Join the live voice room on Sitara Live! 🎙\nRoom ID: $_roomId');
+  }
+
+  void _onPowerTap() {
+    if (!widget.isHost) {
+      Navigator.of(context).pop();
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            _hostMenuItem('Minimize (live stays on)', () {
+              Navigator.pop(ctx);
+              Navigator.of(context).pop();
+            }),
+            const Divider(height: 1),
+            InkWell(
+              onTap: () {
+                Navigator.pop(ctx);
+                _endRoomOnExit = true;
+                Navigator.of(context).pop();
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Text('End live',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontSize: 15,
+                          color: Colors.red,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            _hostMenuItem('Cancel', () => Navigator.pop(ctx), isCancel: true),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------- gifts ----------------
 
   void _sendGift() {
     if (_selectedGift == null) {
@@ -345,9 +594,7 @@ class _LiveScreenState extends State<LiveScreen> {
   void _snack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
-  Future<void> _endOrLeave() async {
-    Navigator.of(context).pop();
-  }
+  // ---------------- build ----------------
 
   @override
   Widget build(BuildContext context) {
@@ -368,7 +615,7 @@ class _LiveScreenState extends State<LiveScreen> {
           ),
           if (_connecting)
             const Center(child: CircularProgressIndicator())
-          else if (_roomId == null)
+          else if (_errorMessage != null || _roomId == null)
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -416,94 +663,125 @@ class _LiveScreenState extends State<LiveScreen> {
     );
   }
 
-  Widget _topBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(5, 5, 10, 5),
+  Widget _circleBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+            color: Colors.black.withOpacity(.45), shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 17, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _countPill() {
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _countStream ??= _firestore.listenersOf(_roomId!),
+      builder: (context, snap) {
+        final count = snap.data?.length ?? 0;
+        return GestureDetector(
+          onTap: () => _openRoomUsers(),
+          child: Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
                 color: Colors.black.withOpacity(.45),
                 borderRadius: BorderRadius.circular(999)),
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(
-                    gradient:
-                        LinearGradient(colors: [AppColors.hot, Color(0xFF7A1BFF)]),
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text('🎙', style: TextStyle(fontSize: 13)),
-                ),
-                const SizedBox(width: 8),
-                StreamBuilder<DocumentSnapshot>(
-                  stream: _firestore.roomDoc(_roomId!),
-                  builder: (context, snap) {
-                    final data = snap.data?.data() as Map<String, dynamic>?;
-                    final hostName =
-                        data?['hostName'] ?? widget.hostName ?? 'Host';
-                    final viewers = data?['viewers'] ?? 0;
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(hostName,
-                            style: const TextStyle(
-                                fontSize: 12.5, fontWeight: FontWeight.bold)),
-                        Text('● $viewers listening',
-                            style: const TextStyle(
-                                fontSize: 10.5, color: AppColors.cyan)),
-                      ],
-                    );
-                  },
-                ),
+                const Icon(Icons.people_alt_outlined,
+                    size: 16, color: Colors.white),
+                const SizedBox(width: 4),
+                Text('$count',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.bold)),
               ],
             ),
           ),
-          Row(
+        );
+      },
+    );
+  }
+
+  Widget _topBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      child: StreamBuilder<DocumentSnapshot>(
+        stream: _topStream ??= _firestore.roomDoc(_roomId!),
+        builder: (context, snap) {
+          final data = snap.data?.data() as Map<String, dynamic>?;
+          final hostName = data?['hostName'] ?? widget.hostName ?? 'Host';
+          final roomName = data?['roomName'] ?? "$hostName's Room";
+          final idText =
+              _roomId!.length > 7 ? _roomId!.substring(0, 7) : _roomId!;
+
+          return Row(
             children: [
-              GestureDetector(
-                onTap: _toggleMic,
+              Expanded(
                 child: Container(
-                  width: 32,
-                  height: 32,
-                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.fromLTRB(5, 5, 12, 5),
                   decoration: BoxDecoration(
                       color: Colors.black.withOpacity(.45),
-                      shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child: Icon(_micMuted ? Icons.mic_off : Icons.mic,
-                      size: 16,
-                      color: _micMuted ? Colors.redAccent : Colors.white),
+                      borderRadius: BorderRadius.circular(999)),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                              colors: [AppColors.hot, Color(0xFF7A1BFF)]),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: const Text('🎙', style: TextStyle(fontSize: 14)),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(roomName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold)),
+                            Text('ID:$idText',
+                                style: const TextStyle(
+                                    fontSize: 10, color: AppColors.muted)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              GestureDetector(
-                onTap: _endOrLeave,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(.45),
-                      shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child:
-                      const Icon(Icons.close, size: 16, color: Colors.white),
-                ),
-              ),
+              const SizedBox(width: 6),
+              _countPill(),
+              if (widget.isHost) ...[
+                const SizedBox(width: 6),
+                _circleBtn(Icons.settings_outlined, _openSettings),
+              ],
+              const SizedBox(width: 6),
+              _circleBtn(Icons.share_outlined, _shareRoom),
+              const SizedBox(width: 6),
+              _circleBtn(Icons.power_settings_new, _onPowerTap),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
   Widget _seatsArea() {
     return StreamBuilder<DocumentSnapshot>(
-      stream: _firestore.roomDoc(_roomId!),
+      stream: _seatsStream ??= _firestore.roomDoc(_roomId!),
       builder: (context, snap) {
         if (!snap.hasData || !(snap.data?.exists ?? false)) {
           return const Center(
@@ -614,6 +892,23 @@ class _LiveScreenState extends State<LiveScreen> {
               },
             ),
           ),
+          if (_mySeatIndex != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _toggleMic,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(.1),
+                    shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: Icon(_micMuted ? Icons.mic_off : Icons.mic,
+                    size: 18,
+                    color: _micMuted ? Colors.redAccent : Colors.white),
+              ),
+            ),
+          ],
           const SizedBox(width: 8),
           GestureDetector(
             onTap: () => setState(() => _giftTrayOpen = true),
