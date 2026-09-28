@@ -24,8 +24,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _firestore.userDoc(AppState.instance.uid).listen((doc) {
-      if (doc.exists) {
-        setState(() => AppState.instance.syncFromFirestore(doc.data() as Map<String, dynamic>));
+      if (doc.exists && mounted) {
+        setState(() => AppState.instance
+            .syncFromFirestore(doc.data() as Map<String, dynamic>));
       }
     });
   }
@@ -47,11 +48,23 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.bgDeep,
         indicatorColor: Colors.transparent,
         destinations: const [
-  NavigationDestination(icon: Icon(Icons.home_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.home, color: AppColors.hot), label: 'Party'),
-  NavigationDestination(icon: Icon(Icons.explore_outlined, color: AppColors.muted), selectedIcon: Icon(Icons.explore, color: AppColors.hot), label: 'Discover'),
-  NavigationDestination(icon: Icon(Icons.mail_outline, color: AppColors.muted), selectedIcon: Icon(Icons.mail, color: AppColors.hot), label: 'Inbox'),
-  NavigationDestination(icon: Icon(Icons.person_outline, color: AppColors.muted), selectedIcon: Icon(Icons.person, color: AppColors.hot), label: 'Profile'),
-],
+          NavigationDestination(
+              icon: Icon(Icons.home_outlined, color: AppColors.muted),
+              selectedIcon: Icon(Icons.home, color: AppColors.hot),
+              label: 'Party'),
+          NavigationDestination(
+              icon: Icon(Icons.explore_outlined, color: AppColors.muted),
+              selectedIcon: Icon(Icons.explore, color: AppColors.hot),
+              label: 'Discover'),
+          NavigationDestination(
+              icon: Icon(Icons.mail_outline, color: AppColors.muted),
+              selectedIcon: Icon(Icons.mail, color: AppColors.hot),
+              label: 'Inbox'),
+          NavigationDestination(
+              icon: Icon(Icons.person_outline, color: AppColors.muted),
+              selectedIcon: Icon(Icons.person, color: AppColors.hot),
+              label: 'Profile'),
+        ],
       ),
     );
   }
@@ -68,7 +81,7 @@ class _HomeTab extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        const seatOptions = [15, 25, 50, 100];
+        const seatOptions = [9, 15, 25, 30, 50, 100];
         return Padding(
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
           child: Column(
@@ -81,24 +94,32 @@ class _HomeTab extends StatelessWidget {
               const Text('How many seats should this voice room have?',
                   style: TextStyle(color: AppColors.muted, fontSize: 12)),
               const SizedBox(height: 18),
-              ...seatOptions.map((count) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  LiveScreen(isHost: true, seatCount: count),
-                            ),
-                          );
-                        },
-                        child: Text('$count Seats'),
-                      ),
-                    ),
-                  )),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: seatOptions
+                        .map((count) => Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    Navigator.pop(ctx);
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => LiveScreen(
+                                            isHost: true, seatCount: count),
+                                      ),
+                                    );
+                                  },
+                                  child: Text('$count Seats'),
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ),
             ],
           ),
         );
@@ -111,10 +132,13 @@ class _HomeTab extends StatelessWidget {
     final snap = await _firestore.getRoomOnce(item['roomId']);
     final data = snap.data() as Map<String, dynamic>?;
     if (data == null || data['status'] != 'live') {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('This room has ended')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('This room has ended')));
+      }
       return;
     }
+    if (!context.mounted) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => LiveScreen(
@@ -137,13 +161,16 @@ class _HomeTab extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Sitara Live', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text('Sitara Live',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 Row(
                   children: [
                     IconButton(
                       icon: const Icon(Icons.search, color: AppColors.muted),
                       onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SearchUserScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const SearchUserScreen()),
                       ),
                     ),
                     CoinPill(coins: state.coins),
@@ -167,17 +194,22 @@ class _HomeTab extends StatelessWidget {
                     padding: const EdgeInsets.all(20),
                     margin: const EdgeInsets.only(bottom: 20),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFF2A0E3D), Color(0xFF3A0F2E)]),
+                      gradient: const LinearGradient(
+                          colors: [Color(0xFF2A0E3D), Color(0xFF3A0F2E)]),
                       border: Border.all(color: const Color(0xFF43223F)),
                       borderRadius: BorderRadius.circular(18),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Start a Voice Room', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const Text('Start a Voice Room',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 6),
-                        const Text('Pick a room size and go live — listeners can join, take a seat, and send gifts.',
-                            style: TextStyle(color: AppColors.muted, fontSize: 12.5)),
+                        const Text(
+                            'Pick a room size and go live — listeners can join, take a seat, and send gifts.',
+                            style: TextStyle(
+                                color: AppColors.muted, fontSize: 12.5)),
                         const SizedBox(height: 14),
                         ElevatedButton(
                           onPressed: () => _pickSeatsAndGoLive(context),
@@ -192,12 +224,18 @@ class _HomeTab extends StatelessWidget {
                 final c2 = Color(myRoom['c2'] ?? 0xFFFF2E6B);
                 final seats = List<dynamic>.from(myRoom['seats'] ?? []);
                 final seatedCount = seats.where((s) => s != null).length;
+                final roomName = (myRoom['roomName'] ??
+                    "${myRoom['hostName'] ?? 'Your'} Room") as String;
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('My Room',
-                        style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.bold, letterSpacing: .8)),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.muted,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: .8)),
                     const SizedBox(height: 8),
                     GestureDetector(
                       onTap: () => Navigator.of(context).push(
@@ -218,18 +256,28 @@ class _HomeTab extends StatelessWidget {
                         child: Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(color: AppColors.hot, borderRadius: BorderRadius.circular(6)),
-                              child: const Text('LIVE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                  color: AppColors.hot,
+                                  borderRadius: BorderRadius.circular(6)),
+                              child: const Text('LIVE',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold)),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
-                                '${myRoom['hostName'] ?? 'Your room'} — tap to rejoin',
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                '$roomName — tap to rejoin',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600),
                               ),
                             ),
-                            Text('🎙 $seatedCount/${myRoom['seatCount'] ?? seats.length}',
+                            Text(
+                                '🎙 $seatedCount/${myRoom['seatCount'] ?? seats.length}',
                                 style: const TextStyle(fontSize: 11)),
                           ],
                         ),
@@ -255,7 +303,11 @@ class _HomeTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Recently',
-                        style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.bold, letterSpacing: .8)),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.muted,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: .8)),
                     const SizedBox(height: 10),
                     SizedBox(
                       height: 88,
@@ -270,7 +322,7 @@ class _HomeTab extends StatelessWidget {
                           final name = item['hostName'] ?? 'Host';
                           return GestureDetector(
                             onTap: () => _openRecentRoom(context, item),
-                            child: Container(
+                            child: SizedBox(
                               width: 72,
                               child: Column(
                                 children: [
@@ -279,19 +331,26 @@ class _HomeTab extends StatelessWidget {
                                     height: 52,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      gradient: LinearGradient(colors: [c1, c2]),
+                                      gradient:
+                                          LinearGradient(colors: [c1, c2]),
                                     ),
                                     alignment: Alignment.center,
                                     child: Text(
-                                      name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                      name.isNotEmpty
+                                          ? name[0].toUpperCase()
+                                          : '?',
+                                      style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold),
                                     ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(name,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(fontSize: 10, color: AppColors.muted)),
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.muted)),
                                 ],
                               ),
                             ),
@@ -311,7 +370,11 @@ class _HomeTab extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: 16),
           sliver: SliverToBoxAdapter(
             child: Text('LIVE NOW',
-                style: TextStyle(fontSize: 12, color: AppColors.muted, fontWeight: FontWeight.bold, letterSpacing: .8)),
+                style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: .8)),
           ),
         ),
         SliverToBoxAdapter(
@@ -333,13 +396,16 @@ class _HomeTab extends StatelessWidget {
                   child: Center(
                     child: Column(
                       children: [
-                        Icon(Icons.mic_none_outlined, size: 40, color: AppColors.muted),
+                        Icon(Icons.mic_none_outlined,
+                            size: 40, color: AppColors.muted),
                         SizedBox(height: 10),
                         Text('No one is live right now',
-                            style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                            style: TextStyle(
+                                color: AppColors.muted, fontSize: 13)),
                         SizedBox(height: 4),
                         Text('Be the first — tap Go Live above!',
-                            style: TextStyle(color: AppColors.muted, fontSize: 11)),
+                            style: TextStyle(
+                                color: AppColors.muted, fontSize: 11)),
                       ],
                     ),
                   ),
@@ -351,8 +417,12 @@ class _HomeTab extends StatelessWidget {
                 child: GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: .82,
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: .82,
                   ),
                   itemCount: rooms.length,
                   itemBuilder: (context, i) => _LiveCard(room: rooms[i]),
@@ -376,6 +446,10 @@ class _LiveCard extends StatelessWidget {
     final c2 = Color(room['c2'] ?? 0xFFFF2E6B);
     final seats = List<dynamic>.from(room['seats'] ?? []);
     final seatedCount = seats.where((s) => s != null).length;
+    final hostName = (room['hostName'] ?? 'Host') as String;
+    final roomName = (room['roomName'] ?? "$hostName's Room") as String;
+    final coverUrl = (room['coverUrl'] ?? '') as String;
+    final locked = room['roomLocked'] == true;
 
     return GestureDetector(
       onTap: () => Navigator.of(context).push(
@@ -383,7 +457,7 @@ class _LiveCard extends StatelessWidget {
           builder: (_) => LiveScreen(
             isHost: false,
             roomId: room['id'],
-            hostName: room['hostName'] ?? 'Host',
+            hostName: hostName,
           ),
         ),
       ),
@@ -402,26 +476,55 @@ class _LiveCard extends StatelessWidget {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(colors: [c1, c2]),
+                  image: coverUrl.isNotEmpty
+                      ? DecorationImage(
+                          image: NetworkImage(coverUrl), fit: BoxFit.cover)
+                      : null,
                 ),
                 padding: const EdgeInsets.all(8),
                 child: Stack(
                   children: [
                     Positioned(
-                      top: 0, left: 0,
+                      top: 0,
+                      left: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(color: AppColors.hot, borderRadius: BorderRadius.circular(6)),
-                        child: const Text('LIVE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: AppColors.hot,
+                            borderRadius: BorderRadius.circular(6)),
+                        child: const Text('LIVE',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.bold)),
                       ),
                     ),
                     Positioned(
-                      top: 0, right: 0,
+                      top: 0,
+                      right: 0,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(color: Colors.black.withOpacity(.5), borderRadius: BorderRadius.circular(6)),
-                        child: Text('🎙 $seatedCount/${room['seatCount'] ?? seats.length}', style: const TextStyle(fontSize: 10)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(.5),
+                            borderRadius: BorderRadius.circular(6)),
+                        child: Text(
+                            '🎙 $seatedCount/${room['seatCount'] ?? seats.length}',
+                            style: const TextStyle(fontSize: 10)),
                       ),
                     ),
+                    if (locked)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(.55),
+                              shape: BoxShape.circle),
+                          child: const Icon(Icons.lock,
+                              size: 12, color: Colors.white),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -431,8 +534,16 @@ class _LiveCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(room['hostName'] ?? 'Host', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  const Text('Voice Room', style: TextStyle(fontSize: 11, color: AppColors.muted)),
+                  Text(roomName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  Text('by $hostName',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.muted)),
                 ],
               ),
             ),
