@@ -211,6 +211,7 @@ class FirestoreService {
     final doc = await _rooms.add({
       'hostUid': hostUid,
       'hostName': hostName,
+      'roomName': "$hostName's Room",
       'seatCount': seatCount,
       'seats': List<dynamic>.filled(seatCount, null, growable: true),
       'lockedSeats': <int>[],
@@ -341,11 +342,216 @@ class FirestoreService {
     });
   }
 
+  /// Locks (or unlocks) every seat except seat 0 (the host's seat).
+  Future<void> setAllSeatsLocked(String roomId, bool locked) async {
+    final snap = await _rooms.doc(roomId).get();
+    if (!snap.exists) return;
+    final data = snap.data() as Map<String, dynamic>;
+    final count = (data['seatCount'] ?? 0) as int;
+    final list = locked ? List<int>.generate(count > 1 ? count - 1 : 0, (i) => i + 1) : <int>[];
+    await _rooms.doc(roomId).update({'lockedSeats': list});
+  }
+
+  Future<void> updateRoomName(String roomId, String name) =>
+      _rooms.doc(roomId).update({'roomName': name});
+
   Future<void> incrementViewers(String roomId, int delta) =>
       _rooms.doc(roomId).update({'viewers': FieldValue.increment(delta)});
 
   Future<void> endRoom(String roomId) =>
       _rooms.doc(roomId).update({'status': 'ended'});
+
+  // ---- Room presence & moderation ----
+
+  CollectionReference _listenersCol(String roomId) =>
+      _rooms.doc(roomId).collection('listeners');
+  CollectionReference _bannedCol(String roomId) =>
+      _rooms.doc(roomId).collection('banned');
+  CollectionReference _kickedCol(String roomId) =>
+      _rooms.doc(roomId).collection('kicked');
+  CollectionReference _micRequestsCol(String roomId) =>
+      _rooms.doc(roomId).collection('mic_requests');
+
+  static const Duration _kickCooldown = Duration(minutes: 30);
+
+  /// Returns 'banned', 'kicked' (still inside the cooldown) or null.
+  Future<String?> entryBlockReason(String roomId, String uid) async {
+    final banned = await _bannedCol(roomId).doc(uid).get();
+    if (banned.exists) return 'banned';
+    final kicked = await _kickedCol(roomId).doc(uid).get();
+    if (kicked.exists) {
+      final ts = (kicked.data() as Map<String, dynamic>)['kickedAt'];
+      if (ts is Timestamp &&
+          DateTime.now().difference(ts.toDate()) < _kickCooldown) {
+        return 'kicked';
+      }
+    }
+    return null;
+  }
+
+  Future<void> joinRoomAsListener(String roomId, String uid, String name) {
+    return _listenersCol(roomId).doc(uid).set({
+      'uid': uid,
+      'name': name,
+      'joinedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> leaveRoomAsListener(String roomId, String uid) =>
+      _listenersCol(roomId).doc(uid).delete();
+
+  Stream<bool> isListenerPresent(String roomId, String uid) =>
+      _listenersCol(roomId).doc(uid).snapshots().map((s) => s.exists);
+
+  Stream<List<Map<String, dynamic>>> listenersOf(String roomId) {
+    return _listenersCol(roomId)
+        .orderBy('joinedAt')
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  Future<void> _removeFromSeats(String roomId, String uid) async {
+    final ref = _rooms.doc(roomId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final seats = List<dynamic>.from(data['seats'] ?? []);
+      var changed = false;
+      for (var i = 0; i < seats.length; i++) {
+        final s = seats[i];
+        if (s is Map && s['uid'] == uid) {
+          seats[i] = null;
+          changed = true;
+        }
+      }
+      if (changed) tx.update(ref, {'seats': seats});
+    });
+  }
+
+  Future<void> kickUser(String roomId, String uid, String name) async {
+    await _kickedCol(roomId).doc(uid).set({
+      'uid': uid,
+      'name': name,
+      'kickedAt': FieldValue.serverTimestamp(),
+    });
+    await _removeFromSeats(roomId, uid);
+    await cancelMicRequest(roomId, uid);
+    // Deleting the presence doc last is what makes the kicked user's
+    // app notice and leave the room.
+    await leaveRoomAsListener(roomId, uid);
+  }
+
+  Future<void> banUser(String roomId, String uid, String name) async {
+    await _bannedCol(roomId).doc(uid).set({
+      'uid': uid,
+      'name': name,
+      'bannedAt': FieldValue.serverTimestamp(),
+    });
+    await _removeFromSeats(roomId, uid);
+    await cancelMicRequest(roomId, uid);
+    await leaveRoomAsListener(roomId, uid);
+  }
+
+  Future<void> unbanUser(String roomId, String uid) =>
+      _bannedCol(roomId).doc(uid).delete();
+
+  Future<void> restoreKicked(String roomId, String uid) =>
+      _kickedCol(roomId).doc(uid).delete();
+
+  Stream<List<Map<String, dynamic>>> bannedOf(String roomId) {
+    return _bannedCol(roomId)
+        .orderBy('bannedAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  Stream<List<Map<String, dynamic>>> kickedOf(String roomId) {
+    return _kickedCol(roomId)
+        .orderBy('kickedAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  // ---- Mic requests ----
+
+  Future<void> requestMic(
+      String roomId, String uid, String name, int seatIndex) {
+    return _micRequestsCol(roomId).doc(uid).set({
+      'uid': uid,
+      'name': name,
+      'seatIndex': seatIndex,
+      'requestedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> cancelMicRequest(String roomId, String uid) =>
+      _micRequestsCol(roomId).doc(uid).delete();
+
+  Stream<List<Map<String, dynamic>>> micRequestsOf(String roomId) {
+    return _micRequestsCol(roomId)
+        .orderBy('requestedAt')
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
+  }
+
+  /// Puts [uid] on the preferred seat if it's free, otherwise on the
+  /// first free unlocked seat. Returns false when nothing is free.
+  Future<bool> placeUserInSeat(String roomId, String uid, String name,
+      {int? preferredIndex}) async {
+    final ref = _rooms.doc(roomId);
+    var placed = false;
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final seats = List<dynamic>.from(data['seats'] ?? []);
+      final locked = List<int>.from(data['lockedSeats'] ?? []);
+
+      if (seats.any((s) => s is Map && s['uid'] == uid)) {
+        placed = true;
+        return;
+      }
+
+      var target = -1;
+      if (preferredIndex != null &&
+          preferredIndex >= 0 &&
+          preferredIndex < seats.length &&
+          seats[preferredIndex] == null) {
+        target = preferredIndex;
+      }
+      if (target == -1) {
+        for (var i = 0; i < seats.length; i++) {
+          if (seats[i] == null && !locked.contains(i)) {
+            target = i;
+            break;
+          }
+        }
+      }
+      if (target == -1) return;
+
+      seats[target] = {'uid': uid, 'name': name, 'isMuted': false};
+      tx.update(ref, {'seats': seats});
+      placed = true;
+    });
+    return placed;
+  }
+
+  Future<bool> approveMicRequest(
+      String roomId, String uid, String name, int? seatIndex) async {
+    final ok = await placeUserInSeat(roomId, uid, name,
+        preferredIndex: seatIndex);
+    if (ok) await cancelMicRequest(roomId, uid);
+    return ok;
+  }
 
   // ---- Recently visited rooms (per user) ----
 
