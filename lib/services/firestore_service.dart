@@ -212,6 +212,11 @@ class FirestoreService {
       'hostUid': hostUid,
       'hostName': hostName,
       'roomName': "$hostName's Room",
+      'coverUrl': '',
+      'welcomeMessage': '',
+      'roomLocked': false,
+      'adminUids': <String>[],
+      'adminNames': <String, String>{},
       'seatCount': seatCount,
       'seats': List<dynamic>.filled(seatCount, null, growable: true),
       'lockedSeats': <int>[],
@@ -324,7 +329,7 @@ class FirestoreService {
     });
   }
 
-  // ---- Seat locking (host control) ----
+  // ---- Seat locking (host / admin control) ----
 
   Future<void> toggleSeatLock(String roomId, int seatIndex, bool locked) async {
     final ref = _rooms.doc(roomId);
@@ -348,12 +353,63 @@ class FirestoreService {
     if (!snap.exists) return;
     final data = snap.data() as Map<String, dynamic>;
     final count = (data['seatCount'] ?? 0) as int;
-    final list = locked ? List<int>.generate(count > 1 ? count - 1 : 0, (i) => i + 1) : <int>[];
+    final list = locked
+        ? List<int>.generate(count > 1 ? count - 1 : 0, (i) => i + 1)
+        : <int>[];
     await _rooms.doc(roomId).update({'lockedSeats': list});
   }
 
+  // ---- Room settings (name, cover, lock, welcome, admins, mic mode) ----
+
   Future<void> updateRoomName(String roomId, String name) =>
       _rooms.doc(roomId).update({'roomName': name});
+
+  Future<void> updateRoomCover(String roomId, String url) =>
+      _rooms.doc(roomId).update({'coverUrl': url});
+
+  Future<void> setRoomLocked(String roomId, bool locked) =>
+      _rooms.doc(roomId).update({'roomLocked': locked});
+
+  Future<void> updateWelcomeMessage(String roomId, String message) =>
+      _rooms.doc(roomId).update({'welcomeMessage': message});
+
+  Future<void> addRoomAdmin(String roomId, String uid, String name) {
+    return _rooms.doc(roomId).update({
+      'adminUids': FieldValue.arrayUnion([uid]),
+      'adminNames.$uid': name,
+    });
+  }
+
+  Future<void> removeRoomAdmin(String roomId, String uid) {
+    return _rooms.doc(roomId).update({
+      'adminUids': FieldValue.arrayRemove([uid]),
+      'adminNames.$uid': FieldValue.delete(),
+    });
+  }
+
+  /// Changes how many mics the room has. People sitting on seats that
+  /// no longer exist are stepped down (their app detects it and
+  /// switches them back to listening).
+  Future<void> setSeatCount(String roomId, int newCount) async {
+    final ref = _rooms.doc(roomId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final data = snap.data() as Map<String, dynamic>;
+      final old = List<dynamic>.from(data['seats'] ?? []);
+      final locked = List<int>.from(data['lockedSeats'] ?? []);
+
+      final seats = List<dynamic>.filled(newCount, null, growable: true);
+      for (var i = 0; i < newCount && i < old.length; i++) {
+        seats[i] = old[i];
+      }
+      tx.update(ref, {
+        'seats': seats,
+        'seatCount': newCount,
+        'lockedSeats': locked.where((i) => i < newCount).toList(),
+      });
+    });
+  }
 
   Future<void> incrementViewers(String roomId, int delta) =>
       _rooms.doc(roomId).update({'viewers': FieldValue.increment(delta)});
