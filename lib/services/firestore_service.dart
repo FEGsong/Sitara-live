@@ -495,8 +495,6 @@ class FirestoreService {
     });
     await _removeFromSeats(roomId, uid);
     await cancelMicRequest(roomId, uid);
-    // Deleting the presence doc last is what makes the kicked user's
-    // app notice and leave the room.
     await leaveRoomAsListener(roomId, uid);
   }
 
@@ -559,8 +557,6 @@ class FirestoreService {
             .toList());
   }
 
-  /// Puts [uid] on the preferred seat if it's free, otherwise on the
-  /// first free unlocked seat. Returns false when nothing is free.
   Future<bool> placeUserInSeat(String roomId, String uid, String name,
       {int? preferredIndex}) async {
     final ref = _rooms.doc(roomId);
@@ -924,6 +920,30 @@ class FirestoreService {
         .map((snap) => snap.docs
             .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
             .toList());
+  }
+
+  /// People this user has an existing chat with — used as the
+  /// "share to friends" list on the live screen.
+  Stream<List<Map<String, dynamic>>> myChatFriends(String uid) {
+    return _chats
+        .where('participants', arrayContains: uid)
+        .orderBy('updatedAt', descending: true)
+        .snapshots()
+        .asyncMap((snap) async {
+      final otherIds = <String>[];
+      for (final d in snap.docs) {
+        final parts =
+            List<String>.from((d.data() as Map<String, dynamic>)['participants'] ?? []);
+        final other = parts.firstWhere((p) => p != uid, orElse: () => '');
+        if (other.isNotEmpty) otherIds.add(other);
+      }
+      if (otherIds.isEmpty) return <Map<String, dynamic>>[];
+      final docs = await Future.wait(otherIds.map((id) => _users.doc(id).get()));
+      return docs
+          .where((d) => d.exists)
+          .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+          .toList();
+    });
   }
 
   // ---- Reports ----
