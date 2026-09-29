@@ -120,6 +120,12 @@ class AgoraService {
     await _engine?.adjustRecordingSignalVolume(mute ? 0 : 100);
   }
 
+  /// Mutes/unmutes everyone else's audio for me only — "mute the
+  /// room for myself", the rest of the room is unaffected.
+  Future<void> muteRoomForMe(bool mute) async {
+    await _engine?.muteAllRemoteAudioStreams(mute);
+  }
+
   // ---- Music (plays a file from this phone into the room) ----
 
   Future<void> startMusic(String path, String name) async {
