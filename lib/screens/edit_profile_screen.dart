@@ -39,7 +39,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-   Future<void> _save() async {
+  Future<void> _save() async {
     setState(() => _saving = true);
     try {
       String? avatarUrl;
