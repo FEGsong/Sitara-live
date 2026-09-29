@@ -2,14 +2,15 @@ import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/agora_service.dart';
 import '../services/firestore_service.dart';
 import '../widgets/coin_pill.dart';
 import '../widgets/room_users_sheet.dart';
+import '../widgets/live_share_sheet.dart';
 import 'room_settings_screen.dart';
+import 'inbox_screen.dart';
 
 class LiveScreen extends StatefulWidget {
   final bool isHost;
@@ -62,6 +63,7 @@ class _LiveScreenState extends State<LiveScreen> {
   String? _roomId;
   int? _mySeatIndex;
   bool _micMuted = false;
+  bool _roomMuted = false;
   bool _connecting = true;
   String? _errorMessage;
 
@@ -78,12 +80,9 @@ class _LiveScreenState extends State<LiveScreen> {
   bool _countedViewer = false;
   bool _registeredListener = false;
 
-  /// True when the host made me an admin of this room.
   bool _isRoomAdmin = false;
   bool get _canManage => widget.isHost || _isRoomAdmin;
 
-  // Cached so StreamBuilders don't re-subscribe on every rebuild
-  // (the speaking indicator rebuilds this screen ~3x per second).
   Stream<DocumentSnapshot>? _topStream;
   Stream<DocumentSnapshot>? _seatsStream;
   Stream<List<Map<String, dynamic>>>? _countStream;
@@ -195,7 +194,6 @@ class _LiveScreenState extends State<LiveScreen> {
         return;
       }
 
-      // Room lock: only the admins the host added can enter.
       final admins = List<String>.from(data['adminUids'] ?? []);
       if (data['roomLocked'] == true && !admins.contains(uid)) {
         if (!mounted) return;
@@ -224,7 +222,6 @@ class _LiveScreenState extends State<LiveScreen> {
       setState(() => _connecting = false);
       _startRoomListeners();
 
-      // Welcome message written by the room owner.
       final welcome = ((data['welcomeMessage'] ?? '') as String).trim();
       if (welcome.isNotEmpty) {
         _addChat(data['hostName'] ?? widget.hostName ?? 'Host', welcome, false);
@@ -238,9 +235,6 @@ class _LiveScreenState extends State<LiveScreen> {
     }
   }
 
-  /// Watches the room document (seat changes, admin role, room ended)
-  /// and — for listeners — their own presence doc, which the host or an
-  /// admin deletes when kicking or banning them.
   void _startRoomListeners() {
     if (_roomId == null) return;
     final myUid = AppState.instance.uid;
@@ -256,7 +250,6 @@ class _LiveScreenState extends State<LiveScreen> {
         return;
       }
 
-      // Did the host add or remove me as an admin?
       if (!widget.isHost) {
         final admins = List<String>.from(data['adminUids'] ?? []);
         final nowAdmin = admins.contains(myUid);
@@ -423,7 +416,6 @@ class _LiveScreenState extends State<LiveScreen> {
     if (_roomId == null) return;
     final uid = AppState.instance.uid;
 
-    // Tapping my own seat → step down.
     if (seatData != null && seatData['uid'] == uid) {
       await _firestore.leaveSeat(_roomId!, index);
       if (!widget.isHost) await _agora.setSpeakingRole(false);
@@ -436,13 +428,11 @@ class _LiveScreenState extends State<LiveScreen> {
       return;
     }
 
-    // Host / room admin tapping an empty seat → control menu.
     if (_canManage) {
       _showManageSeatMenu(index, lockedSeats.contains(index));
       return;
     }
 
-    // Viewer tapping an empty seat → send a mic request to the host.
     if (lockedSeats.contains(index)) {
       _snack('This seat is locked by the host');
       return;
@@ -492,8 +482,31 @@ class _LiveScreenState extends State<LiveScreen> {
     );
   }
 
+  void _toggleRoomMute() {
+    setState(() => _roomMuted = !_roomMuted);
+    _agora.muteRoomForMe(_roomMuted);
+    _snack(_roomMuted ? 'Room muted for you' : 'Room unmuted');
+  }
+
   void _shareRoom() {
-    Share.share('Join the live voice room on Sitara Live! 🎙\nRoom ID: $_roomId');
+    if (_roomId == null) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => LiveShareSheet(
+        roomId: _roomId!,
+        roomName: _myName,
+        roomMuted: _roomMuted,
+        onToggleMute: _toggleRoomMute,
+        onOpenInbox: () => Navigator.of(context)
+            .push(MaterialPageRoute(builder: (_) => const InboxScreen())),
+        onOpenGift: () => setState(() => _giftTrayOpen = true),
+        onOpenMore: () => _openRoomUsers(),
+      ),
+    );
   }
 
   void _onPowerTap() {
@@ -633,6 +646,7 @@ class _LiveScreenState extends State<LiveScreen> {
                   _topBar(),
                   Expanded(child: _seatsArea()),
                   _chatArea(),
+                  if (_mySeatIndex != null) _micRow(),
                   _bottomInputBar(),
                 ],
               ),
@@ -863,6 +877,44 @@ class _LiveScreenState extends State<LiveScreen> {
     );
   }
 
+  Widget _micRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _toggleMic,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: _micMuted
+                    ? Colors.redAccent.withOpacity(.18)
+                    : AppColors.cyan.withOpacity(.15),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                    color: _micMuted ? Colors.redAccent : AppColors.cyan),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_micMuted ? Icons.mic_off : Icons.mic,
+                      size: 18,
+                      color: _micMuted ? Colors.redAccent : AppColors.cyan),
+                  const SizedBox(width: 8),
+                  Text(_micMuted ? 'Unmute yourself' : 'Mute yourself',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: _micMuted ? Colors.redAccent : AppColors.cyan)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _bottomInputBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 14),
@@ -889,23 +941,6 @@ class _LiveScreenState extends State<LiveScreen> {
               },
             ),
           ),
-          if (_mySeatIndex != null) ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _toggleMic,
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(.1),
-                    shape: BoxShape.circle),
-                alignment: Alignment.center,
-                child: Icon(_micMuted ? Icons.mic_off : Icons.mic,
-                    size: 18,
-                    color: _micMuted ? Colors.redAccent : Colors.white),
-              ),
-            ),
-          ],
           const SizedBox(width: 8),
           GestureDetector(
             onTap: () => setState(() => _giftTrayOpen = true),
