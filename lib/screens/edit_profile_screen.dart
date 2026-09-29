@@ -39,22 +39,31 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Future<void> _save() async {
+   Future<void> _save() async {
     setState(() => _saving = true);
-    String? avatarUrl;
-    if (_pickedAvatar != null) {
-      avatarUrl = await _storage.uploadAvatar(file: _pickedAvatar!, uid: AppState.instance.uid);
+    try {
+      String? avatarUrl;
+      if (_pickedAvatar != null) {
+        avatarUrl = await _storage.uploadAvatar(
+            file: _pickedAvatar!, uid: AppState.instance.uid);
+      }
+      await _fs.updateProfile(
+        AppState.instance.uid,
+        nickname: _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
+        username: _usernameCtrl.text.trim().isEmpty ? null : _usernameCtrl.text.trim(),
+        bio: _bioCtrl.text.trim(),
+        avatarUrl: avatarUrl,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    await _fs.updateProfile(
-      AppState.instance.uid,
-      nickname: _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
-      username: _usernameCtrl.text.trim().isEmpty ? null : _usernameCtrl.text.trim(),
-      bio: _bioCtrl.text.trim(),
-      avatarUrl: avatarUrl,
-    );
-    if (!mounted) return;
-    setState(() => _saving = false);
-    Navigator.of(context).pop();
   }
 
   @override
