@@ -36,6 +36,7 @@ dependencies:
   gal: ^2.3.0
   mobile_scanner: ^5.2.3
   file_picker: ^8.1.2
+  app_links: ^6.3.2
   
 dev_dependencies:
   flutter_test:
