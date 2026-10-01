@@ -31,6 +31,8 @@ class FirestoreService {
     required String phone,
     required String email,
     required String username,
+    String? invitedByUid,
+    String? invitedByName,
   }) async {
     await _users.doc(uid).set({
       'phone': phone,
@@ -50,8 +52,17 @@ class FirestoreService {
       'followersCount': 0,
       'followingCount': 0,
       'profileViews': 0,
+      'invitedByUid': invitedByUid,
+      'invitedByName': invitedByName,
+      'referralCount': 0,
+      'referralClaimable': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    if (invitedByUid != null) {
+      await applyReferralSignupBonus(
+          inviterUid: invitedByUid, newUserUid: uid);
+    }
   }
 
   Stream<DocumentSnapshot> userDoc(String uid) => _users.doc(uid).snapshots();
@@ -192,12 +203,83 @@ class FirestoreService {
         );
   }
 
+  /// Credits the purchased coins, then — if this user was invited —
+  /// pays the referral bonuses (60% to their direct inviter, 15% to
+  /// that inviter's own inviter) into each person's claimable pool.
   Future<void> approveRequest(String requestId, String uid, int coins) async {
     final batch = _db.batch();
     batch.update(_requests.doc(requestId), {'status': 'approved'});
     batch.update(_users.doc(uid), {'coins': FieldValue.increment(coins)});
     await batch.commit();
     await _logTransaction(uid, title: 'Coins purchased', amount: coins);
+
+    final buyerSnap = await _users.doc(uid).get();
+    final buyerData = buyerSnap.data() as Map<String, dynamic>?;
+    final level1Uid = buyerData?['invitedByUid'] as String?;
+    if (level1Uid == null) return;
+
+    final level1Bonus = (coins * 0.60).round();
+    if (level1Bonus > 0) {
+      await _users.doc(level1Uid).update({
+        'referralClaimable': FieldValue.increment(level1Bonus),
+      });
+    }
+
+    final level1Snap = await _users.doc(level1Uid).get();
+    final level1Data = level1Snap.data() as Map<String, dynamic>?;
+    final level2Uid = level1Data?['invitedByUid'] as String?;
+    if (level2Uid == null) return;
+
+    final level2Bonus = (coins * 0.15).round();
+    if (level2Bonus > 0) {
+      await _users.doc(level2Uid).update({
+        'referralClaimable': FieldValue.increment(level2Bonus),
+      });
+    }
+  }
+
+  // ---- Referrals / Invite Friends ----
+
+  /// Called once, right when a new account with [invitedByUid] is
+  /// created — pays the inviter the flat "invite a friend" bonus.
+  Future<void> applyReferralSignupBonus({
+    required String inviterUid,
+    required String newUserUid,
+  }) async {
+    const signupBonus = 300000;
+    await _users.doc(inviterUid).update({
+      'referralCount': FieldValue.increment(1),
+      'referralClaimable': FieldValue.increment(signupBonus),
+    });
+  }
+
+  /// Moves this user's claimable referral coins into their spendable
+  /// balance and logs it as a transaction.
+  Future<int> claimReferralCoins(String uid) async {
+    final snap = await _users.doc(uid).get();
+    final data = snap.data() as Map<String, dynamic>?;
+    final claimable = (data?['referralClaimable'] ?? 0) as int;
+    if (claimable <= 0) return 0;
+
+    final batch = _db.batch();
+    batch.update(_users.doc(uid), {
+      'coins': FieldValue.increment(claimable),
+      'referralClaimable': 0,
+    });
+    await batch.commit();
+    await _logTransaction(uid, title: 'Referral reward claimed', amount: claimable);
+    return claimable;
+  }
+
+  /// Friends this user has directly invited — newest first.
+  Stream<List<Map<String, dynamic>>> invitedFriendsOf(String uid) {
+    return _users
+        .where('invitedByUid', isEqualTo: uid)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => {'uid': d.id, ...d.data() as Map<String, dynamic>})
+            .toList());
   }
 
   // ---- Audio rooms ----
@@ -347,7 +429,6 @@ class FirestoreService {
     });
   }
 
-  /// Locks (or unlocks) every seat except seat 0 (the host's seat).
   Future<void> setAllSeatsLocked(String roomId, bool locked) async {
     final snap = await _rooms.doc(roomId).get();
     if (!snap.exists) return;
@@ -387,9 +468,6 @@ class FirestoreService {
     });
   }
 
-  /// Changes how many mics the room has. People sitting on seats that
-  /// no longer exist are stepped down (their app detects it and
-  /// switches them back to listening).
   Future<void> setSeatCount(String roomId, int newCount) async {
     final ref = _rooms.doc(roomId);
     await _db.runTransaction((tx) async {
@@ -430,7 +508,6 @@ class FirestoreService {
 
   static const Duration _kickCooldown = Duration(minutes: 30);
 
-  /// Returns 'banned', 'kicked' (still inside the cooldown) or null.
   Future<String?> entryBlockReason(String roomId, String uid) async {
     final banned = await _bannedCol(roomId).doc(uid).get();
     if (banned.exists) return 'banned';
@@ -922,8 +999,6 @@ class FirestoreService {
             .toList());
   }
 
-  /// People this user has an existing chat with — used as the
-  /// "share to friends" list on the live screen.
   Stream<List<Map<String, dynamic>>> myChatFriends(String uid) {
     return _chats
         .where('participants', arrayContains: uid)
