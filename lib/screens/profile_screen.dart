@@ -1,3 +1,4 @@
+import 'invite_friends_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
@@ -206,6 +207,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 16),
+                        Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const InviteFriendsScreen()),
+                  ),
+                  icon: const Icon(Icons.card_giftcard, color: AppColors.gold),
+                  label: const Text('Invite Friends — Get Gold Coins'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
