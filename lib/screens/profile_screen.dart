@@ -1,3 +1,5 @@
+import 'vip_screen.dart';
+import 'svip_screen.dart';
 import 'invite_friends_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
