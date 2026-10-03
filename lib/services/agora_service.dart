@@ -13,11 +13,8 @@ class AgoraService {
 
   int _myAgoraUid = 0;
 
-  /// Called with the Agora uids currently detected as speaking —
-  /// used to show the "speaking" ring around a seat.
   void Function(List<int> speakingUids)? onSpeakingUpdate;
 
-  // ---- Room music state (read by the Music sheet) ----
   final ValueNotifier<String?> musicName = ValueNotifier<String?>(null);
   final ValueNotifier<bool> musicPlaying = ValueNotifier<bool>(false);
   int musicVolume = 60;
@@ -42,6 +39,21 @@ class AgoraService {
     required bool isHost,
     required String myUid,
   }) async {
+    // Safety net: if a previous session's engine wasn't fully torn
+    // down (e.g. minimizing a live and re-opening it quickly), Agora
+    // rejects a new join with AgoraRtcException(-17, ...) because it
+    // thinks we're already in a channel. Always start clean.
+    if (_engine != null) {
+      try {
+        await _engine!.leaveChannel();
+        await _engine!.release();
+      } catch (_) {}
+      _engine = null;
+      musicPlaying.value = false;
+      musicName.value = null;
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+
     final micStatus = await Permission.microphone.request();
     if (!micStatus.isGranted) {
       throw Exception(
@@ -62,7 +74,6 @@ class AgoraService {
               .where((s) => (s.volume ?? 0) > 15)
               .map((s) {
             final u = s.uid ?? 0;
-            // Agora reports the local user as uid 0.
             return u == 0 ? _myAgoraUid : u;
           }).toList();
           onSpeakingUpdate?.call(speaking);
@@ -85,20 +96,74 @@ class AgoraService {
           ? ClientRoleType.clientRoleBroadcaster
           : ClientRoleType.clientRoleAudience,
     );
-    await engine.joinChannel(
-      token: data['token'] as String,
-      channelId: channel,
-      uid: _myAgoraUid,
-      options: ChannelMediaOptions(
-        clientRoleType: isHost
+
+    try {
+      await engine.joinChannel(
+        token: data['token'] as String,
+        channelId: channel,
+        uid: _myAgoraUid,
+        options: ChannelMediaOptions(
+          clientRoleType: isHost
+              ? ClientRoleType.clientRoleBroadcaster
+              : ClientRoleType.clientRoleAudience,
+          publishMicrophoneTrack: isHost,
+          publishCameraTrack: false,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: false,
+        ),
+      );
+    } catch (e) {
+      // -17 = already joined on Agora's side even after our cleanup
+      // above. One retry with a fresh engine instance resolves it.
+      try {
+        await engine.leaveChannel();
+        await engine.release();
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      final retryEngine = createAgoraRtcEngine();
+      await retryEngine.initialize(
+          RtcEngineContext(appId: data['appId'] as String));
+      retryEngine.registerEventHandler(
+        RtcEngineEventHandler(
+          onAudioVolumeIndication:
+              (connection, speakers, speakerNumber, totalVolume) {
+            final speaking = speakers
+                .where((s) => (s.volume ?? 0) > 15)
+                .map((s) {
+              final u = s.uid ?? 0;
+              return u == 0 ? _myAgoraUid : u;
+            }).toList();
+            onSpeakingUpdate?.call(speaking);
+          },
+        ),
+      );
+      await retryEngine.enableAudio();
+      await retryEngine.enableAudioVolumeIndication(
+          interval: 300, smooth: 3, reportVad: true);
+      await retryEngine.setClientRole(
+        role: isHost
             ? ClientRoleType.clientRoleBroadcaster
             : ClientRoleType.clientRoleAudience,
-        publishMicrophoneTrack: isHost,
-        publishCameraTrack: false,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: false,
-      ),
-    );
+      );
+      await retryEngine.joinChannel(
+        token: data['token'] as String,
+        channelId: channel,
+        uid: _myAgoraUid,
+        options: ChannelMediaOptions(
+          clientRoleType: isHost
+              ? ClientRoleType.clientRoleBroadcaster
+              : ClientRoleType.clientRoleAudience,
+          publishMicrophoneTrack: isHost,
+          publishCameraTrack: false,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: false,
+        ),
+      );
+      _engine = retryEngine;
+      return retryEngine;
+    }
+
     _engine = engine;
     return engine;
   }
@@ -114,19 +179,13 @@ class AgoraService {
     if (canSpeak) await _engine!.adjustRecordingSignalVolume(100);
   }
 
-  /// Mutes only the microphone voice (the stream keeps publishing) so
-  /// music mixed into the stream keeps playing while the host is muted.
   Future<void> toggleMic(bool mute) async {
     await _engine?.adjustRecordingSignalVolume(mute ? 0 : 100);
   }
 
-  /// Mutes/unmutes everyone else's audio for me only — "mute the
-  /// room for myself", the rest of the room is unaffected.
   Future<void> muteRoomForMe(bool mute) async {
     await _engine?.muteAllRemoteAudioStreams(mute);
   }
-
-  // ---- Music (plays a file from this phone into the room) ----
 
   Future<void> startMusic(String path, String name) async {
     final e = _engine;
@@ -159,8 +218,10 @@ class AgoraService {
   }
 
   Future<void> leaveChannel() async {
-    await _engine?.leaveChannel();
-    await _engine?.release();
+    try {
+      await _engine?.leaveChannel();
+      await _engine?.release();
+    } catch (_) {}
     _engine = null;
     musicPlaying.value = false;
     musicName.value = null;
