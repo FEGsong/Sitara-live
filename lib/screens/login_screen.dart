@@ -1,5 +1,8 @@
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:country_code_picker/country_code_picker.dart';
+
 import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/auth_service.dart';
@@ -22,7 +25,21 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isSignup = true;
   bool _loading = false;
   bool _obscurePassword = true;
-  String _fullPhone() => '+92${_phoneCtrl.text.trim()}';
+
+  String _countryDialCode = '+92';
+
+  String _fullPhone() {
+    final phone = _phoneCtrl.text.trim();
+
+    // If the user enters a complete international number,
+    // use it directly instead of adding the country code again.
+    if (phone.startsWith('+')) {
+      return phone.replaceAll(RegExp(r'[\s()-]'), '');
+    }
+
+    final cleanPhone = phone.replaceAll(RegExp(r'[\s()-]'), '');
+    return '$_countryDialCode$cleanPhone';
+  }
 
   Future<void> _submit() async {
     final phone = _phoneCtrl.text.trim();
@@ -33,16 +50,19 @@ class _LoginScreenState extends State<LoginScreen> {
       _toast('Phone number is required');
       return;
     }
+
     if (_isSignup && email.isEmpty) {
       _toast('Email is required — used to reset your password later');
       return;
     }
+
     if (password.isEmpty) {
       _toast('Password is required');
       return;
     }
 
     setState(() => _loading = true);
+
     try {
       if (_isSignup) {
         final cred = await _auth
@@ -52,50 +72,70 @@ class _LoginScreenState extends State<LoginScreen> {
               password: password,
               username: _usernameCtrl.text.trim(),
             )
-            .timeout(const Duration(seconds: 15), onTimeout: () {
-          throw Exception('Request timed out — check your internet connection');
-        });
+            .timeout(
+              const Duration(seconds: 15),
+              onTimeout: () {
+                throw Exception(
+                  'Request timed out — check your internet connection',
+                );
+              },
+            );
+
+        if (cred.user == null) {
+          throw Exception('Account creation failed. Please try again.');
+        }
+
         AppState.instance.uid = cred.user!.uid;
       } else {
-        final cred =
-            await _auth.signIn(phone: _fullPhone(), password: password);
+        final cred = await _auth.signIn(
+          phone: _fullPhone(),
+          password: password,
+        );
+
+        if (cred.user == null) {
+          throw Exception('Login failed. Please try again.');
+        }
+
         AppState.instance.uid = cred.user!.uid;
       }
 
       if (!mounted) return;
+
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Firebase Auth Error'),
-            content: Text(_friendlyError(e)),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'))
-            ],
-          ),
-        );
-      }
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Firebase Auth Error'),
+          content: Text(_friendlyError(e)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Error'),
-            content: Text('$e'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'))
-            ],
-          ),
-        );
-      }
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Error'),
+          content: Text('$e'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -119,8 +159,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
+    );
   }
 
   void _openForgotPassword() {
@@ -149,15 +190,22 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Reset Password',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Reset Password',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     sent
                         ? 'Check your inbox for the reset link'
                         : 'Enter the email you signed up with — we will send you a link to reset your password',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 12,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   if (!sent) ...[
@@ -165,7 +213,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: resetEmailCtrl,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
-                          hintText: 'you@example.com'),
+                        hintText: 'you@example.com',
+                      ),
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -175,23 +224,31 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? null
                             : () async {
                                 final email = resetEmailCtrl.text.trim();
+
                                 if (email.isEmpty) return;
+
                                 setSheetState(() => sending = true);
+
                                 try {
                                   await _auth.sendPasswordReset(email);
+
                                   setSheetState(() {
                                     sending = false;
                                     sent = true;
                                   });
                                 } on FirebaseAuthException catch (e) {
                                   setSheetState(() => sending = false);
-                                  _toast(e.message ?? 'Could not send reset email');
-                                } catch (e) {
+                                  _toast(
+                                    e.message ?? 'Could not send reset email',
+                                  );
+                                } catch (_) {
                                   setSheetState(() => sending = false);
                                   _toast('Could not send reset email');
                                 }
                               },
-                        child: Text(sending ? 'Sending...' : 'Send Reset Link'),
+                        child: Text(
+                          sending ? 'Sending...' : 'Send Reset Link',
+                        ),
                       ),
                     ),
                   ] else ...[
@@ -209,7 +266,16 @@ class _LoginScreenState extends State<LoginScreen> {
           },
         );
       },
-    );
+    ).whenComplete(() => resetEmailCtrl.dispose());
+  }
+
+  @override
+  void dispose() {
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _usernameCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -218,7 +284,10 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 28,
+              vertical: 32,
+            ),
             child: Column(
               children: [
                 Container(
@@ -231,17 +300,31 @@ class _LoginScreenState extends State<LoginScreen> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   alignment: Alignment.center,
-                  child: Image.asset('assets/images/logo.png',
-                      width: 60, height: 60),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 60,
+                    height: 60,
+                  ),
                 ),
                 const SizedBox(height: 14),
-                const Text('Sitara Live',
-                    style:
-                        TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                const Text(
+                  'Sitara Live',
+                  style: TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                const Text('Go live, connect, and send gifts',
-                    style: TextStyle(color: AppColors.muted, fontSize: 13)),
+                const Text(
+                  'Go live, connect, and send gifts',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 13,
+                  ),
+                ),
                 const SizedBox(height: 20),
+
+                // Sign Up / Log In tabs
                 Container(
                   decoration: BoxDecoration(
                     color: AppColors.surface,
@@ -251,33 +334,210 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Row(
                     children: [
                       Expanded(
-                          child: _tabButton('Sign Up', _isSignup,
-                              () => setState(() => _isSignup = true))),
+                        child: _tabButton(
+                          'Sign Up',
+                          _isSignup,
+                          () => setState(() => _isSignup = true),
+                        ),
+                      ),
                       Expanded(
-                          child: _tabButton('Log In', !_isSignup,
-                              () => setState(() => _isSignup = false))),
+                        child: _tabButton(
+                          'Log In',
+                          !_isSignup,
+                          () => setState(() => _isSignup = false),
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 20),
+
                 _label('Phone Number *'),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      width: 64,
                       height: 52,
-                      alignment: Alignment.center,
+                      constraints: const BoxConstraints(minWidth: 100),
                       decoration: BoxDecoration(
                         color: AppColors.surface,
                         border: Border.all(color: AppColors.line),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Text('+92'),
+                      child: CountryCodePicker(
+                        initialSelection: 'PK',
+                        favorite: const ['PK', 'US', 'GB', 'AE', 'SA'],
+                        showCountryOnly: false,
+                        showOnlyCountryWhenClosed: false,
+                        showFlag: true,
+                        showFlagDialog: true,
+                        hideSearch: false,
+
+                        // Sort the full country list alphabetically.
+                        comparator: (a, b) =>
+                            (a.name ?? '').compareTo(b.name ?? ''),
+
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        textStyle: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.text,
+                        ),
+                        searchDecoration: const InputDecoration(
+                          hintText: 'Search country or code',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (country) {
+                          setState(() {
+                            _countryDialCode = country.dialCode ?? '+92';
+                          });
+                        },
+                        onInit: (country) {
+                          _countryDialCode = country?.dialCode ?? '+92';
+                        },
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _phoneCtrl,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          hintText: 'Phone number',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (_isSignup) ...[
+                  const SizedBox(height: 14),
+                  _label('Email *'),
+                  TextField(
+                    controller: _emailCtrl,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      hintText: 'you@example.com',
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+                _label('Password *'),
+                TextField(
+                  controller: _passwordCtrl,
+                  obscureText: _obscurePassword,
+                  decoration: InputDecoration(
+                    hintText: 'Enter password',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () => setState(
+                        () => _obscurePassword = !_obscurePassword,
+                      ),
+                    ),
+                  ),
+                ),
+
+                if (_isSignup) ...[
+                  const SizedBox(height: 14),
+                  _label('Username'),
+                  TextField(
+                    controller: _usernameCtrl,
+                    decoration: const InputDecoration(
+                      hintText: 'Enter Username',
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _loading ? null : _submit,
+                    child: Text(
+                      _loading
+                          ? 'Please wait...'
+                          : (_isSignup ? 'Sign Up' : 'Log In'),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: _openForgotPassword,
+                  child: const Text(
+                    'Forgot Password?',
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 12,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'By continuing you agree to our Terms & Privacy Policy',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tabButton(
+    String label,
+    bool active,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? AppColors.hot : Colors.black,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, top: 2),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 11,
+            color: AppColors.muted,
+            fontWeight: FontWeight.w600,
+            letterSpacing: .5,
+          ),
+        ),
+      ),
+    );
+  }
+}
+      controller: _phoneCtrl,
                         keyboardType: TextInputType.phone,
                         decoration:
                             const InputDecoration(hintText: '3XX XXXXXXX'),
