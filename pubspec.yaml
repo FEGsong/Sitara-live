@@ -37,7 +37,8 @@ dependencies:
   mobile_scanner: ^5.2.3
   file_picker: ^8.1.2
   app_links: ^6.3.2
-  
+  country_code_picker: ^3.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
