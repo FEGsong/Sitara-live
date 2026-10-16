@@ -16,11 +16,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _auth = AuthService();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _usernameCtrl = TextEditingController();
+  final AuthService _auth = AuthService();
+  final TextEditingController _phoneCtrl = TextEditingController();
+  final TextEditingController _emailCtrl = TextEditingController();
+  final TextEditingController _passwordCtrl = TextEditingController();
+  final TextEditingController _usernameCtrl = TextEditingController();
 
   bool _isSignup = true;
   bool _loading = false;
@@ -30,21 +30,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _fullPhone() {
     final phone = _phoneCtrl.text.trim();
+    final cleanPhone = phone.replaceAll(RegExp(r'[\s()-]'), '');
 
-    // If the user enters a complete international number,
-    // use it directly instead of adding the country code again.
-    if (phone.startsWith('+')) {
-      return phone.replaceAll(RegExp(r'[\s()-]'), '');
+    if (cleanPhone.startsWith('+')) {
+      return cleanPhone;
     }
 
-    final cleanPhone = phone.replaceAll(RegExp(r'[\s()-]'), '');
     return '$_countryDialCode$cleanPhone';
   }
 
   Future<void> _submit() async {
     final phone = _phoneCtrl.text.trim();
     final email = _emailCtrl.text.trim();
-    final password = _passwordCtrl.text.trim();
+    final password = _passwordCtrl.text;
 
     if (phone.isEmpty) {
       _toast('Phone number is required');
@@ -52,12 +50,17 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (_isSignup && email.isEmpty) {
-      _toast('Email is required — used to reset your password later');
+      _toast('Email is required');
       return;
     }
 
-    if (password.isEmpty) {
+    if (password.trim().isEmpty) {
       _toast('Password is required');
+      return;
+    }
+
+    if (_isSignup && password.length < 6) {
+      _toast('Password should be at least 6 characters');
       return;
     }
 
@@ -73,10 +76,10 @@ class _LoginScreenState extends State<LoginScreen> {
               username: _usernameCtrl.text.trim(),
             )
             .timeout(
-              const Duration(seconds: 15),
+              const Duration(seconds: 30),
               onTimeout: () {
                 throw Exception(
-                  'Request timed out — check your internet connection',
+                  'Request timed out. Check your internet connection.',
                 );
               },
             );
@@ -102,65 +105,63 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(
+          builder: (_) => const HomeScreen(),
+        ),
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
 
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Firebase Auth Error'),
-          content: Text(_friendlyError(e)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
+      _showError('Authentication Error', _friendlyError(e));
     } catch (e) {
       if (!mounted) return;
 
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Error'),
-          content: Text('$e'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
+      _showError('Error', e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   String _friendlyError(FirebaseAuthException e) {
     switch (e.code) {
       case 'email-already-in-use':
-        return 'An account with this email already exists — try logging in instead';
+        return 'This email already exists. Try logging in.';
       case 'weak-password':
-        return 'Password should be at least 6 characters';
+        return 'Password should be at least 6 characters.';
       case 'invalid-email':
-        return 'Please enter a valid email address';
+        return 'Please enter a valid email address.';
       case 'user-not-found':
       case 'wrong-password':
       case 'invalid-credential':
-        return 'Incorrect phone number or password';
+        return 'Incorrect phone number or password.';
+      case 'network-request-failed':
+        return 'Network error. Check your internet connection.';
       default:
-        return e.message ?? 'Authentication error';
+        return e.message ?? 'Authentication failed. Please try again.';
     }
   }
 
-  void _toast(String msg) {
+  void _showError(String title, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _toast(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -169,22 +170,24 @@ class _LoginScreenState extends State<LoginScreen> {
     bool sending = false;
     bool sent = false;
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(20),
+        ),
       ),
-      builder: (ctx) {
+      builder: (sheetContext) {
         return StatefulBuilder(
-          builder: (ctx, setSheetState) {
+          builder: (context, setSheetState) {
             return Padding(
               padding: EdgeInsets.only(
                 left: 20,
                 right: 20,
                 top: 22,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 26,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 26,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -193,18 +196,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   const Text(
                     'Reset Password',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     sent
-                        ? 'Check your inbox for the reset link'
-                        : 'Enter the email you signed up with — we will send you a link to reset your password',
+                        ? 'Check your inbox for the password reset link.'
+                        : 'Enter the email address linked to your account.',
                     style: const TextStyle(
                       color: AppColors.muted,
-                      fontSize: 12,
+                      fontSize: 13,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -223,27 +226,38 @@ class _LoginScreenState extends State<LoginScreen> {
                         onPressed: sending
                             ? null
                             : () async {
-                                final email = resetEmailCtrl.text.trim();
+                                final email =
+                                    resetEmailCtrl.text.trim();
 
-                                if (email.isEmpty) return;
+                                if (email.isEmpty) {
+                                  _toast('Enter your email address');
+                                  return;
+                                }
 
                                 setSheetState(() => sending = true);
 
                                 try {
                                   await _auth.sendPasswordReset(email);
 
+                                  if (!context.mounted) return;
+
                                   setSheetState(() {
                                     sending = false;
                                     sent = true;
                                   });
                                 } on FirebaseAuthException catch (e) {
+                                  if (!context.mounted) return;
+
                                   setSheetState(() => sending = false);
                                   _toast(
-                                    e.message ?? 'Could not send reset email',
+                                    e.message ??
+                                        'Could not send reset email.',
                                   );
                                 } catch (_) {
+                                  if (!context.mounted) return;
+
                                   setSheetState(() => sending = false);
-                                  _toast('Could not send reset email');
+                                  _toast('Could not send reset email.');
                                 }
                               },
                         child: Text(
@@ -251,22 +265,21 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-                  ] else ...[
+                  ] else
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: () => Navigator.pop(ctx),
+                        onPressed: () => Navigator.pop(sheetContext),
                         child: const Text('Done'),
                       ),
                     ),
-                  ],
                 ],
               ),
             );
           },
         );
       },
-    ).whenComplete(() => resetEmailCtrl.dispose());
+    ).whenComplete(resetEmailCtrl.dispose);
   }
 
   @override
@@ -295,7 +308,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   height: 64,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [AppColors.hot, Color(0xFF7A1BFF)],
+                      colors: [
+                        AppColors.hot,
+                        Color(0xFF7A1BFF),
+                      ],
                     ),
                     borderRadius: BorderRadius.circular(20),
                   ),
@@ -304,6 +320,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     'assets/images/logo.png',
                     width: 60,
                     height: 60,
+                    errorBuilder: (_, __, ___) => const Icon(
+                      Icons.star,
+                      size: 40,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -324,13 +345,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Sign Up / Log In tabs
+                // Sign Up and Log In tabs
                 Container(
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.all(4),
                   child: Row(
                     children: [
                       Expanded(
@@ -358,7 +379,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Container(
                       height: 52,
-                      constraints: const BoxConstraints(minWidth: 100),
+                      constraints: const BoxConstraints(
+                        minWidth: 105,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.surface,
                         border: Border.all(color: AppColors.line),
@@ -366,21 +389,26 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: CountryCodePicker(
                         initialSelection: 'PK',
-                        favorite: const ['PK', 'US', 'GB', 'AE', 'SA'],
+                        favorite: const [
+                          'PK',
+                          'AE',
+                          'SA',
+                          'GB',
+                          'US',
+                        ],
                         showCountryOnly: false,
                         showOnlyCountryWhenClosed: false,
                         showFlag: true,
                         showFlagDialog: true,
                         hideSearch: false,
-
-                        // Sort the full country list alphabetically.
                         comparator: (a, b) =>
                             (a.name ?? '').compareTo(b.name ?? ''),
-
-                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                        ),
                         textStyle: const TextStyle(
                           fontSize: 14,
-                          color: AppColors.text,
+                          color: Colors.white,
                         ),
                         searchDecoration: const InputDecoration(
                           hintText: 'Search country or code',
@@ -388,11 +416,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         onChanged: (country) {
                           setState(() {
-                            _countryDialCode = country.dialCode ?? '+92';
+                            _countryDialCode =
+                                country.dialCode ?? '+92';
                           });
                         },
                         onInit: (country) {
-                          _countryDialCode = country?.dialCode ?? '+92';
+                          _countryDialCode =
+                              country?.dialCode ?? '+92';
                         },
                       ),
                     ),
@@ -434,9 +464,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? Icons.visibility_off
                             : Icons.visibility,
                       ),
-                      onPressed: () => setState(
-                        () => _obscurePassword = !_obscurePassword,
-                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
                     ),
                   ),
                 ),
@@ -447,7 +479,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextField(
                     controller: _usernameCtrl,
                     decoration: const InputDecoration(
-                      hintText: 'Enter Username',
+                      hintText: 'Enter username',
                     ),
                   ),
                 ],
@@ -521,7 +553,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _label(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6, top: 2),
+      padding: const EdgeInsets.only(
+        bottom: 6,
+        top: 2,
+      ),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(
@@ -537,112 +572,4 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-      controller: _phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        decoration:
-                            const InputDecoration(hintText: '3XX XXXXXXX'),
-                      ),
-                    ),
-                  ],
-                ),
-                if (_isSignup) ...[
-                  const SizedBox(height: 14),
-                  _label('Email *'),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                        hintText: 'you@example.com'),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                _label('Password *'),
-                TextField(
-                  controller: _passwordCtrl,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    hintText: 'Enter password',
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (_isSignup) ...[
-                  _label('Username'),
-                  TextField(
-                    controller: _usernameCtrl,
-                    decoration:
-                        const InputDecoration(hintText: 'Enter Username'),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-                const SizedBox(height: 6),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _submit,
-                    child: Text(_loading
-                        ? 'Please wait...'
-                        : (_isSignup ? 'Sign Up' : 'Log In')),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: _openForgotPassword,
-                  child: const Text('Forgot Password?',
-                      style: TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 12,
-                          decoration: TextDecoration.underline)),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'By continuing you agree to our Terms & Privacy Policy',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.muted, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _tabButton(String label, bool active, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: active ? AppColors.hot : Colors.black,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        alignment: Alignment.center,
-        child: Text(label,
-            style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Colors.white)),
-      ),
-    );
-  }
-
-  Widget _label(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 6, top: 2),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(text,
-              style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.muted,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: .5)),
-        ),
-      );
-}
+l
