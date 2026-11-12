@@ -1,15 +1,10 @@
+import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import '../config.dart';
 import 'firestore_service.dart';
 
-/// Firebase Auth's email/password provider stores the password
-/// securely. Signup now collects a REAL email address (in addition
-/// to phone + username) so Firebase can send a free, built-in
-/// password-reset link straight to the user's inbox — no SMS, no
-/// Cloud Function, no paid plan needed.
-///
-/// Users still log in with PHONE + PASSWORD: on sign-in we look up
-/// the account's real email from Firestore (by phone number) and
-/// use that to authenticate behind the scenes.
+/// Firebase Auth's email/password provider stores the password securely.
 class AuthService {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirestoreService();
@@ -49,13 +44,44 @@ class AuthService {
     return _auth.signInWithEmailAndPassword(email: email, password: password);
   }
 
+  /// Requests the trusted server to add Supabase's required custom role.
+  /// The Firebase ID token is verified by Firebase Admin on the server.
+  Future<void> ensureSupabaseRole() async {
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Please sign in again.');
+
+    final idToken = await user.getIdToken(true);
+    final uri = Uri.parse(
+      '${AppConfig.tokenServerUrl}/ensure-supabase-role',
+    );
+    final response = await http.post(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $idToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({}),
+    ).timeout(const Duration(seconds: 20));
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Server role setup failed (${response.statusCode}). '
+        'Please try again later.',
+      );
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (data['success'] != true) {
+      throw Exception('Could not enable secure storage access.');
+    }
+
+    if (data['tokenRefreshRequired'] == true) {
+      await user.getIdToken(true);
+    }
+  }
+
   Future<void> signOut() => _auth.signOut();
 
-  /// Sends Firebase's built-in password-reset email to the address
-  /// the user types in the "Forgot Password" screen. Firebase
-  /// handles the link, the reset page, and the new-password form —
-  /// completely free, no extra setup beyond the template in the
-  /// Firebase Console (already configured).
   Future<void> sendPasswordReset(String email) {
     return _auth.sendPasswordResetEmail(email: email.trim());
   }
