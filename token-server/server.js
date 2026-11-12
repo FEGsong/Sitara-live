@@ -75,5 +75,10 @@ app.get('/rtc-token', (req, res) => {
 
 app.get('/', (req, res) => res.send('Agora token server is running ✅'));
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Token server listening on port ${PORT}`));
+// Vercel imports the Express app as a serverless function.
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`Token server listening on port ${PORT}`));
+}
+
+module.exports = app;
