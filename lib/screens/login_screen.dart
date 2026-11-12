@@ -17,10 +17,11 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final AuthService _auth = AuthService();
-  final TextEditingController _phoneCtrl = TextEditingController();
-  final TextEditingController _emailCtrl = TextEditingController();
-  final TextEditingController _passwordCtrl = TextEditingController();
-  final TextEditingController _usernameCtrl = TextEditingController();
+
+  final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
 
   bool _isSignup = true;
   bool _loading = false;
@@ -85,7 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
             );
 
         if (cred.user == null) {
-          throw Exception('Account creation failed. Please try again.');
+          throw Exception('Account creation failed.');
         }
 
         AppState.instance.uid = cred.user!.uid;
@@ -96,7 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         if (cred.user == null) {
-          throw Exception('Login failed. Please try again.');
+          throw Exception('Login failed.');
         }
 
         AppState.instance.uid = cred.user!.uid;
@@ -111,12 +112,13 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-
       _showError('Authentication Error', _friendlyError(e));
     } catch (e) {
       if (!mounted) return;
-
-      _showError('Error', e.toString().replaceFirst('Exception: ', ''));
+      _showError(
+        'Error',
+        e.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -139,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
       case 'network-request-failed':
         return 'Network error. Check your internet connection.';
       default:
-        return e.message ?? 'Authentication failed. Please try again.';
+        return e.message ?? 'Authentication failed.';
     }
   }
 
@@ -203,8 +205,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 8),
                   Text(
                     sent
-                        ? 'Check your inbox for the password reset link.'
-                        : 'Enter the email address linked to your account.',
+                        ? 'Check your inbox for the reset link.'
+                        : 'Enter the email linked to your account.',
                     style: const TextStyle(
                       color: AppColors.muted,
                       fontSize: 13,
@@ -239,14 +241,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 try {
                                   await _auth.sendPasswordReset(email);
 
-                                  if (!context.mounted) return;
+                                  if (!mounted) return;
 
                                   setSheetState(() {
                                     sending = false;
                                     sent = true;
                                   });
                                 } on FirebaseAuthException catch (e) {
-                                  if (!context.mounted) return;
+                                  if (!mounted) return;
 
                                   setSheetState(() => sending = false);
                                   _toast(
@@ -254,7 +256,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         'Could not send reset email.',
                                   );
                                 } catch (_) {
-                                  if (!context.mounted) return;
+                                  if (!mounted) return;
 
                                   setSheetState(() => sending = false);
                                   _toast('Could not send reset email.');
@@ -345,7 +347,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Sign Up and Log In tabs
+                // Sign Up / Log In tabs
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
@@ -375,7 +377,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 _label('Phone Number *'),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
                       height: 52,
@@ -572,4 +573,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-l
