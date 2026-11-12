@@ -103,6 +103,9 @@ class _LoginScreenState extends State<LoginScreen> {
         AppState.instance.uid = cred.user!.uid;
       }
 
+      // Ask the trusted backend to set Supabase's authenticated claim.
+      await _auth.ensureSupabaseRole();
+
       if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
