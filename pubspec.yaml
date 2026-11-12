@@ -15,34 +15,34 @@ dependencies:
   google_fonts: ^6.2.1
   country_code_picker: ^3.4.1
 
-  # Real-time live streaming (broadcast + viewer)
+  # Real-time live streaming
   agora_rtc_engine: ^6.3.2
 
-  # Calling our token server & future backend APIs
+  # Backend API calls
   http: ^1.2.1
 
-  # Local persistence
+  # Local storage
   shared_preferences: ^2.2.3
 
-  # Camera / mic runtime permissions
+  # Camera and microphone permissions
   permission_handler: ^11.3.1
 
-  # Firebase — authentication and database
+  # Firebase
   firebase_core: ^3.1.0
   firebase_auth: ^5.1.0
   cloud_firestore: ^5.0.1
   firebase_storage: ^12.3.2
 
-  # Media and sharing
+  # Images and sharing
   image_picker: ^1.1.2
   share_plus: ^10.1.2
   url_launcher: ^6.3.0
 
-  # QR code and scanning
+  # QR code
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.2.3
 
-  # Files, app links and gallery
+  # Files and app links
   gal: ^2.3.0
   file_picker: ^8.1.2
   app_links: ^6.3.2
