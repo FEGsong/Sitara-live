@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:app_links/app_links.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
@@ -12,6 +13,15 @@ import 'services/referral_prefs.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await Supabase.initialize(
+    url: 'https://cpfilhctjoarkfmygeaw.supabase.co',
+    publishableKey: 'sb_publishable_RdFniOXiWYBqbKfuuFXLaw_u-Czn6BU',
+    accessToken: () async {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+      return user.getIdToken();
+    },
+  );
   runApp(const SitaraLiveApp());
 }
 
