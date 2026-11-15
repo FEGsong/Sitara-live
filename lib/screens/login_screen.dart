@@ -1,578 +1,322 @@
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:country_code_picker/country_code_picker.dart';
-
-import '../theme/app_theme.dart';
 import '../models/app_state.dart';
 import '../services/auth_service.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
-
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final AuthService _auth = AuthService();
+  static const gold = Color(0xFFFFD36A);
+  static const brightGold = Color(0xFFFFE7A0);
+  static const purple = Color(0xFF9B35FF);
+  static const bg = Color(0xFF050208);
 
+  final _auth = AuthService();
   final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
-
-  bool _isSignup = true;
-  bool _loading = false;
-  bool _obscurePassword = true;
-
+  bool _isSignup = true, _loading = false, _obscurePassword = true;
   String _countryDialCode = '+92';
 
   String _fullPhone() {
-    final phone = _phoneCtrl.text.trim();
-    final cleanPhone = phone.replaceAll(RegExp(r'[\s()-]'), '');
+    final phone = _phoneCtrl.text.trim().replaceAll(RegExp(r'[\s()-]'), '');
+    return phone.startsWith('+') ? phone : '$_countryDialCode$phone';
+  }
 
-    if (cleanPhone.startsWith('+')) {
-      return cleanPhone;
-    }
-
-    return '$_countryDialCode$cleanPhone';
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: const Color(0xFF321044)),
+    );
   }
 
   Future<void> _submit() async {
     final phone = _phoneCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
-
-    if (phone.isEmpty) {
-      _toast('Phone number is required');
-      return;
-    }
-
-    if (_isSignup && email.isEmpty) {
-      _toast('Email is required');
-      return;
-    }
-
-    if (password.trim().isEmpty) {
-      _toast('Password is required');
-      return;
-    }
-
-    if (_isSignup && password.length < 6) {
-      _toast('Password should be at least 6 characters');
-      return;
+    if (_isSignup) {
+      if (phone.isEmpty || email.isEmpty || _usernameCtrl.text.trim().isEmpty) {
+        _toast('Phone number, email and username are required');
+        return;
+      }
+      if (password.length < 6) {
+        _toast('Password should be at least 6 characters');
+        return;
+      }
+    } else {
+      if (phone.isEmpty && email.isEmpty) {
+        _toast('Enter your phone number or email address');
+        return;
+      }
+      if (password.isEmpty) {
+        _toast('Password is required');
+        return;
+      }
     }
 
     setState(() => _loading = true);
-
     try {
-      if (_isSignup) {
-        final cred = await _auth
-            .signUp(
-              phone: _fullPhone(),
-              email: email,
-              password: password,
+      final credential = _isSignup
+          ? await _auth.signUp(
+              phone: _fullPhone(), email: email, password: password,
               username: _usernameCtrl.text.trim(),
-            )
-            .timeout(
-              const Duration(seconds: 30),
-              onTimeout: () {
-                throw Exception(
-                  'Request timed out. Check your internet connection.',
-                );
-              },
+            ).timeout(const Duration(seconds: 30),
+              onTimeout: () => throw Exception('Request timed out. Check your internet connection.'))
+          : await _auth.signIn(
+              phone: phone.isEmpty ? '' : _fullPhone(),
+              email: email, password: password,
             );
 
-        if (cred.user == null) {
-          throw Exception('Account creation failed.');
-        }
-
-        AppState.instance.uid = cred.user!.uid;
-      } else {
-        final cred = await _auth.signIn(
-          phone: _fullPhone(),
-          password: password,
-        );
-
-        if (cred.user == null) {
-          throw Exception('Login failed.');
-        }
-
-        AppState.instance.uid = cred.user!.uid;
-      }
-
-      // Ask the trusted backend to set Supabase's authenticated claim.
+      if (credential.user == null) throw Exception('Authentication failed.');
+      AppState.instance.uid = credential.user!.uid;
       await _auth.ensureSupabaseRole();
-
       if (!mounted) return;
-
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => const HomeScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      _showError('Authentication Error', _friendlyError(e));
+      if (mounted) _showError('Authentication Error', _friendlyError(e));
     } catch (e) {
-      if (!mounted) return;
-      _showError(
-        'Error',
-        e.toString().replaceFirst('Exception: ', ''),
-      );
+      if (mounted) _showError('Error', e.toString().replaceFirst('Exception: ', ''));
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   String _friendlyError(FirebaseAuthException e) {
     switch (e.code) {
-      case 'email-already-in-use':
-        return 'This email already exists. Try logging in.';
-      case 'weak-password':
-        return 'Password should be at least 6 characters.';
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
+      case 'email-already-in-use': return 'This email already exists. Try logging in.';
+      case 'weak-password': return 'Password should be at least 6 characters.';
+      case 'invalid-email': return 'Please enter a valid email address.';
       case 'user-not-found':
       case 'wrong-password':
-      case 'invalid-credential':
-        return 'Incorrect phone number or password.';
-      case 'network-request-failed':
-        return 'Network error. Check your internet connection.';
-      default:
-        return e.message ?? 'Authentication failed.';
+      case 'invalid-credential': return 'Incorrect phone/email or password.';
+      case 'network-request-failed': return 'Network error. Check your internet connection.';
+      default: return e.message ?? 'Authentication failed.';
     }
   }
 
   void _showError(String title, String message) {
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B1024),
+        title: Text(title, style: const TextStyle(color: brightGold)),
         content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('OK'),
-          ),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx),
+          child: const Text('OK', style: TextStyle(color: gold)))],
       ),
     );
   }
 
-  void _toast(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
-  void _openForgotPassword() {
-    final resetEmailCtrl = TextEditingController();
-    bool sending = false;
-    bool sent = false;
-
-    showModalBottomSheet<void>(
+  Future<void> _forgotPassword() async {
+    final controller = TextEditingController(text: _emailCtrl.text.trim());
+    bool sending = false, sent = false;
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: const Color(0xFF160B20),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(20),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        side: BorderSide(color: gold),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(22, 24, 22, MediaQuery.of(ctx).viewInsets.bottom + 28),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Forgot Password?', style: TextStyle(color: brightGold, fontSize: 21, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(sent ? 'If an account exists for this email, a reset link has been sent.' : 'Enter your registered email address to receive a reset link.', style: const TextStyle(color: Colors.white70, height: 1.5)),
+              const SizedBox(height: 18),
+              if (!sent) ...[
+                _input(controller, 'Email Address', Icons.mail_outline, keyboard: TextInputType.emailAddress),
+                const SizedBox(height: 16),
+                _goldButton(sending ? 'SENDING...' : 'SEND RESET LINK', sending ? null : () async {
+                  if (controller.text.trim().isEmpty) { _toast('Enter your email address'); return; }
+                  setSheet(() => sending = true);
+                  try {
+                    await _auth.sendPasswordReset(controller.text.trim());
+                    setSheet(() { sending = false; sent = true; });
+                  } on FirebaseAuthException catch (e) {
+                    setSheet(() => sending = false);
+                    _toast(e.message ?? 'Could not send reset email.');
+                  } catch (_) {
+                    setSheet(() => sending = false);
+                    _toast('Could not send reset email.');
+                  }
+                }),
+              ] else
+                _goldButton('DONE', () => Navigator.pop(sheetCtx)),
+            ],
+          ),
         ),
       ),
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 22,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 26,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Reset Password',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    sent
-                        ? 'Check your inbox for the reset link.'
-                        : 'Enter the email linked to your account.',
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  if (!sent) ...[
-                    TextField(
-                      controller: resetEmailCtrl,
-                      keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
-                        hintText: 'you@example.com',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: sending
-                            ? null
-                            : () async {
-                                final email =
-                                    resetEmailCtrl.text.trim();
-
-                                if (email.isEmpty) {
-                                  _toast('Enter your email address');
-                                  return;
-                                }
-
-                                setSheetState(() => sending = true);
-
-                                try {
-                                  await _auth.sendPasswordReset(email);
-
-                                  if (!mounted) return;
-
-                                  setSheetState(() {
-                                    sending = false;
-                                    sent = true;
-                                  });
-                                } on FirebaseAuthException catch (e) {
-                                  if (!mounted) return;
-
-                                  setSheetState(() => sending = false);
-                                  _toast(
-                                    e.message ??
-                                        'Could not send reset email.',
-                                  );
-                                } catch (_) {
-                                  if (!mounted) return;
-
-                                  setSheetState(() => sending = false);
-                                  _toast('Could not send reset email.');
-                                }
-                              },
-                        child: Text(
-                          sending ? 'Sending...' : 'Send Reset Link',
-                        ),
-                      ),
-                    ),
-                  ] else
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(sheetContext),
-                        child: const Text('Done'),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(resetEmailCtrl.dispose);
+    );
+    controller.dispose();
   }
 
   @override
   void dispose() {
-    _phoneCtrl.dispose();
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    _usernameCtrl.dispose();
+    _phoneCtrl.dispose(); _emailCtrl.dispose(); _passwordCtrl.dispose(); _usernameCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 28,
-              vertical: 32,
-            ),
-            child: Column(
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        AppColors.hot,
-                        Color(0xFF7A1BFF),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  alignment: Alignment.center,
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    width: 60,
-                    height: 60,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.star,
-                      size: 40,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Sitara Live',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Go live, connect, and send gifts',
-                  style: TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Sign Up / Log In tabs
-                Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _tabButton(
-                          'Sign Up',
-                          _isSignup,
-                          () => setState(() => _isSignup = true),
-                        ),
-                      ),
-                      Expanded(
-                        child: _tabButton(
-                          'Log In',
-                          !_isSignup,
-                          () => setState(() => _isSignup = false),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                _label('Phone Number *'),
-                Row(
-                  children: [
-                    Container(
-                      height: 52,
-                      constraints: const BoxConstraints(
-                        minWidth: 105,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        border: Border.all(color: AppColors.line),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: CountryCodePicker(
-                        initialSelection: 'PK',
-                        favorite: const [
-                          'PK',
-                          'AE',
-                          'SA',
-                          'GB',
-                          'US',
-                        ],
-                        showCountryOnly: false,
-                        showOnlyCountryWhenClosed: false,
-                        showFlag: true,
-                        showFlagDialog: true,
-                        hideSearch: false,
-                        comparator: (a, b) =>
-                            (a.name ?? '').compareTo(b.name ?? ''),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white,
-                        ),
-                        searchDecoration: const InputDecoration(
-                          hintText: 'Search country or code',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                        onChanged: (country) {
-                          setState(() {
-                            _countryDialCode =
-                                country.dialCode ?? '+92';
-                          });
-                        },
-                        onInit: (country) {
-                          _countryDialCode =
-                              country?.dialCode ?? '+92';
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          hintText: 'Phone number',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-                if (_isSignup) ...[
-                  const SizedBox(height: 14),
-                  _label('Email *'),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      hintText: 'you@example.com',
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 14),
-                _label('Password *'),
-                TextField(
-                  controller: _passwordCtrl,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    hintText: 'Enter password',
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                    ),
-                  ),
-                ),
-
-                if (_isSignup) ...[
-                  const SizedBox(height: 14),
-                  _label('Username'),
-                  TextField(
-                    controller: _usernameCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Enter username',
-                    ),
-                  ),
-                ],
-
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _submit,
-                    child: Text(
-                      _loading
-                          ? 'Please wait...'
-                          : (_isSignup ? 'Sign Up' : 'Log In'),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: _openForgotPassword,
-                  child: const Text(
-                    'Forgot Password?',
-                    style: TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 12,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                ),
+      backgroundColor: bg,
+      body: Stack(children: [
+        const Positioned.fill(child: _GalaxyBackdrop()),
+        SafeArea(child: LayoutBuilder(builder: (context, constraints) =>
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 44),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const SizedBox(height: 8),
-                const Text(
-                  'By continuing you agree to our Terms & Privacy Policy',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 11,
-                  ),
+                Image.asset('assets/images/logo.png', width: 220, height: 185, fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.auto_awesome, size: 112, color: gold)),
+                const Text('SITARA', style: TextStyle(fontFamily: 'serif', fontSize: 43, letterSpacing: 8, fontWeight: FontWeight.w700, color: brightGold, shadows: [Shadow(color: gold, blurRadius: 18)])),
+                const Text('L I V E', style: TextStyle(color: purple, fontSize: 21, letterSpacing: 8, fontWeight: FontWeight.bold, shadows: [Shadow(color: purple, blurRadius: 12)])),
+                const SizedBox(height: 7),
+                const Text('LIVE YOUR MOMENT', style: TextStyle(color: gold, fontSize: 10, letterSpacing: 5)),
+                const SizedBox(height: 28),
+                if (!_isSignup) ...[
+                  const Text('WELCOME BACK', style: TextStyle(color: brightGold, fontSize: 20, letterSpacing: 3, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 18),
+                ],
+                _phoneField(),
+                const SizedBox(height: 14),
+                _input(_emailCtrl, 'Email Address', Icons.mail_outline, keyboard: TextInputType.emailAddress),
+                const SizedBox(height: 14),
+                _input(_passwordCtrl, 'Password', Icons.lock_outline, obscure: _obscurePassword,
+                  suffix: IconButton(
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: gold),
+                  )),
+                if (_isSignup) ...[
+                  const SizedBox(height: 14),
+                  _input(_usernameCtrl, 'Username', Icons.person_outline, keyboard: TextInputType.name),
+                ] else ...[
+                  const SizedBox(height: 8),
+                  Align(alignment: Alignment.centerRight,
+                    child: TextButton(onPressed: _forgotPassword,
+                      child: const Text('Forgot Password?', style: TextStyle(color: brightGold, decoration: TextDecoration.underline)))),
+                ],
+                const SizedBox(height: 18),
+                _goldButton(_loading ? 'PLEASE WAIT...' : (_isSignup ? '♛   SIGN UP   ➜' : '♛   LOGIN   ➜'),
+                  _loading ? null : _submit),
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: _loading ? null : () => setState(() { _isSignup = !_isSignup; _passwordCtrl.clear(); }),
+                  child: RichText(textAlign: TextAlign.center, text: TextSpan(
+                    style: const TextStyle(color: Colors.white70, fontSize: 13),
+                    children: [
+                      TextSpan(text: _isSignup ? 'Already have an account? ' : "Don't have an account? "),
+                      TextSpan(text: _isSignup ? 'Login' : 'Sign Up',
+                        style: const TextStyle(color: brightGold, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                    ],
+                  )),
                 ),
-              ],
+                const SizedBox(height: 24),
+                const Text('✦   CONNECT   ✦   LIVE   ✦   GROW   ✦', style: TextStyle(color: gold, fontSize: 10, letterSpacing: 2.5)),
+              ]),
             ),
           ),
-        ),
-      ),
+        )),
+      ]),
     );
   }
 
-  Widget _tabButton(
-    String label,
-    bool active,
-    VoidCallback onTap,
-  ) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: active ? AppColors.hot : Colors.black,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _phoneField() => _glowingField(Row(children: [
+    CountryCodePicker(
+      initialSelection: 'PK', favorite: const ['PK', 'AE', 'SA', 'GB', 'US'],
+      showCountryOnly: false, showOnlyCountryWhenClosed: false, showFlag: true,
+      showFlagDialog: true, hideSearch: false,
+      comparator: (a, b) => (a.name ?? '').compareTo(b.name ?? ''),
+      padding: const EdgeInsets.only(left: 5),
+      textStyle: const TextStyle(color: brightGold, fontSize: 13),
+      searchDecoration: const InputDecoration(hintText: 'Search country or code'),
+      onChanged: (country) => setState(() => _countryDialCode = country.dialCode ?? '+92'),
+      onInit: (country) => _countryDialCode = country?.dialCode ?? '+92',
+    ),
+    Container(width: 1, height: 28, color: gold.withOpacity(.65)),
+    Expanded(child: TextField(controller: _phoneCtrl, keyboardType: TextInputType.phone,
+      style: const TextStyle(color: Colors.white, fontSize: 14),
+      decoration: const InputDecoration(hintText: 'Phone Number', hintStyle: TextStyle(color: Colors.white70),
+        border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
+        filled: false, contentPadding: EdgeInsets.symmetric(horizontal: 13, vertical: 17)))),
+  ]));
 
-  Widget _label(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(
-        bottom: 6,
-        top: 2,
-      ),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontSize: 11,
-            color: AppColors.muted,
-            fontWeight: FontWeight.w600,
-            letterSpacing: .5,
-          ),
-        ),
-      ),
-    );
+  Widget _input(TextEditingController controller, String hint, IconData icon,
+      {TextInputType keyboard = TextInputType.text, bool obscure = false, Widget? suffix}) =>
+    _glowingField(Row(children: [
+      Padding(padding: const EdgeInsets.only(left: 13, right: 12), child: Icon(icon, color: gold, size: 25)),
+      Container(width: 1, height: 28, color: gold.withOpacity(.65)),
+      Expanded(child: TextField(controller: controller, keyboardType: keyboard, obscureText: obscure,
+        style: const TextStyle(color: Colors.white, fontSize: 14),
+        decoration: InputDecoration(hintText: hint, hintStyle: const TextStyle(color: Colors.white70),
+          border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
+          filled: false, contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 17), suffixIcon: suffix))),
+    ]));
+
+  Widget _glowingField(Widget child) => Container(
+    decoration: BoxDecoration(borderRadius: BorderRadius.circular(40),
+      gradient: const LinearGradient(colors: [brightGold, purple, gold, purple, brightGold]),
+      boxShadow: [BoxShadow(color: purple.withOpacity(.30), blurRadius: 13), BoxShadow(color: gold.withOpacity(.16), blurRadius: 18)]),
+    padding: const EdgeInsets.all(1.7),
+    child: Container(decoration: BoxDecoration(color: const Color(0xFF100B18), borderRadius: BorderRadius.circular(38)), child: child),
+  );
+
+  Widget _goldButton(String label, VoidCallback? onPressed) => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(borderRadius: BorderRadius.circular(40),
+      gradient: const LinearGradient(colors: [brightGold, Color(0xFFB87918), gold, Color(0xFF8B4B0B)]),
+      boxShadow: [BoxShadow(color: gold.withOpacity(.28), blurRadius: 17), BoxShadow(color: purple.withOpacity(.20), blurRadius: 12)]),
+    padding: const EdgeInsets.all(2),
+    child: ElevatedButton(onPressed: onPressed,
+      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF170C20), foregroundColor: brightGold,
+        disabledBackgroundColor: const Color(0xFF302034), elevation: 0, shape: const StadiumBorder(),
+        padding: const EdgeInsets.symmetric(vertical: 17)),
+      child: Text(label, style: const TextStyle(color: brightGold, fontWeight: FontWeight.bold, letterSpacing: 3, fontSize: 15))),
+  );
+}
+
+class _GalaxyBackdrop extends StatelessWidget {
+  const _GalaxyBackdrop();
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(gradient: RadialGradient(center: Alignment(0, -.55), radius: 1.15,
+      colors: [Color(0xFF26083D), Color(0xFF100716), Color(0xFF050208)])),
+    child: CustomPaint(painter: _StarsPainter()),
+  );
+}
+
+class _StarsPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final points = <Offset>[
+      Offset(size.width * .08, size.height * .12), Offset(size.width * .87, size.height * .10),
+      Offset(size.width * .17, size.height * .33), Offset(size.width * .92, size.height * .37),
+      Offset(size.width * .10, size.height * .67), Offset(size.width * .88, size.height * .72),
+      Offset(size.width * .23, size.height * .88), Offset(size.width * .78, size.height * .91),
+    ];
+    final paint = Paint();
+    for (final point in points) {
+      paint.color = gold.withOpacity(.72);
+      canvas.drawCircle(point, 1.5, paint);
+      paint.color = purple.withOpacity(.12);
+      canvas.drawCircle(point, 5, paint);
+    }
   }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
