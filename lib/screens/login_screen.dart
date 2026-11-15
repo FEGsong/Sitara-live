@@ -311,9 +311,9 @@ class _StarsPainter extends CustomPainter {
     ];
     final paint = Paint();
     for (final point in points) {
-      paint.color = gold.withOpacity(.72);
+      paint.color = const Color(0xFFFFD36A).withOpacity(.72);
       canvas.drawCircle(point, 1.5, paint);
-      paint.color = purple.withOpacity(.12);
+      paint.color = const Color(0xFF9B35FF).withOpacity(.12);
       canvas.drawCircle(point, 5, paint);
     }
   }
