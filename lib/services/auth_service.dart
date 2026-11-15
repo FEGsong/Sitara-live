@@ -52,13 +52,13 @@ class AuthService {
     final user = _auth.currentUser;
     if (user == null) throw Exception('Please sign in again.');
     final idToken = await user.getIdToken(true);
-    final uri = Uri.parse('\${AppConfig.tokenServerUrl}/ensure-supabase-role');
+    final uri = Uri.parse('${AppConfig.tokenServerUrl}/ensure-supabase-role');
     final response = await http.post(uri,
       headers: {'Authorization': 'Bearer $idToken', 'Content-Type': 'application/json'},
       body: jsonEncode({}),
     ).timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
-      throw Exception('Server role setup failed (\${response.statusCode}). Please try again later.');
+      throw Exception('Server role setup failed (${response.statusCode}). Please try again later.');
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (data['success'] != true) throw Exception('Could not enable secure storage access.');
