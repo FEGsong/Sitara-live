@@ -294,8 +294,14 @@ class _GalaxyBackdrop extends StatelessWidget {
   const _GalaxyBackdrop();
   @override
   Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(gradient: RadialGradient(center: Alignment(0, -.55), radius: 1.15,
-      colors: [Color(0xFF26083D), Color(0xFF100716), Color(0xFF050208)])),
+    decoration: const BoxDecoration(
+      gradient: RadialGradient(
+        center: Alignment(0, -.48),
+        radius: 1.28,
+        colors: [Color(0xFF351052), Color(0xFF180923), Color(0xFF09040F), Color(0xFF030207)],
+        stops: [0, .38, .76, 1],
+      ),
+    ),
     child: CustomPaint(painter: _StarsPainter()),
   );
 }
@@ -303,20 +309,68 @@ class _GalaxyBackdrop extends StatelessWidget {
 class _StarsPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
+    final gold = const Color(0xFFFFD36A);
+    final purple = const Color(0xFFB45CFF);
+    final paint = Paint()..style = PaintingStyle.stroke;
+
+    // Soft nebula haze behind the unchanged login form.
+    paint
+      ..style = PaintingStyle.fill
+      ..color = purple.withOpacity(.075)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 42);
+    canvas.drawCircle(Offset(size.width * .12, size.height * .28), size.width * .34, paint);
+    canvas.drawCircle(Offset(size.width * .91, size.height * .62), size.width * .30, paint);
+
+    // Fine celestial arcs add a subtle royal-galaxy frame without covering controls.
+    paint
+      ..style = PaintingStyle.stroke
+      ..maskFilter = null
+      ..strokeWidth = 1.1
+      ..color = gold.withOpacity(.22);
+    final arcRect = Rect.fromCenter(
+      center: Offset(size.width * .5, size.height * .47),
+      width: size.width * 1.42,
+      height: size.height * .70,
+    );
+    canvas.drawArc(arcRect, 3.52, 2.28, false, paint);
+    paint
+      ..strokeWidth = .7
+      ..color = purple.withOpacity(.30);
+    canvas.drawArc(arcRect.deflate(13), 3.58, 2.16, false, paint);
+
     final points = <Offset>[
-      Offset(size.width * .08, size.height * .12), Offset(size.width * .87, size.height * .10),
-      Offset(size.width * .17, size.height * .33), Offset(size.width * .92, size.height * .37),
-      Offset(size.width * .10, size.height * .67), Offset(size.width * .88, size.height * .72),
-      Offset(size.width * .23, size.height * .88), Offset(size.width * .78, size.height * .91),
+      Offset(size.width * .08, size.height * .12),
+      Offset(size.width * .87, size.height * .10),
+      Offset(size.width * .17, size.height * .33),
+      Offset(size.width * .92, size.height * .37),
+      Offset(size.width * .10, size.height * .67),
+      Offset(size.width * .88, size.height * .72),
+      Offset(size.width * .23, size.height * .88),
+      Offset(size.width * .78, size.height * .91),
+      Offset(size.width * .50, size.height * .06),
+      Offset(size.width * .42, size.height * .96),
     ];
-    final paint = Paint();
-    for (final point in points) {
-      paint.color = const Color(0xFFFFD36A).withOpacity(.72);
-      canvas.drawCircle(point, 1.5, paint);
-      paint.color = const Color(0xFF9B35FF).withOpacity(.12);
-      canvas.drawCircle(point, 5, paint);
+    for (var i = 0; i < points.length; i++) {
+      final point = points[i];
+      paint
+        ..style = PaintingStyle.fill
+        ..color = gold.withOpacity(i.isEven ? .78 : .48);
+      canvas.drawCircle(point, i.isEven ? 1.7 : 1.1, paint);
+      paint.color = purple.withOpacity(.16);
+      canvas.drawCircle(point, i.isEven ? 6 : 4.5, paint);
+    }
+
+    // A few small four-point star glints near the outer edges.
+    for (final point in [Offset(size.width * .06, size.height * .48), Offset(size.width * .94, size.height * .22), Offset(size.width * .83, size.height * .84)]) {
+      paint
+        ..color = gold.withOpacity(.55)
+        ..strokeWidth = 1.0
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(point.translate(-4, 0), point.translate(4, 0), paint);
+      canvas.drawLine(point.translate(0, -4), point.translate(0, 4), paint);
     }
   }
+
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
