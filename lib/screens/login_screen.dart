@@ -174,6 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: bg,
       body: Stack(children: [
+        if (_isSignup) _buildSignupArtwork() else ...[
         const Positioned.fill(child: _GalaxyBackdrop()),
         SafeArea(child: LayoutBuilder(builder: (context, constraints) =>
           SingleChildScrollView(
@@ -232,7 +233,61 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         )),
+        ],
       ]),
+    );
+  }
+
+  Widget _buildSignupArtwork() {
+    return LayoutBuilder(builder: (context, constraints) {
+      final w = constraints.maxWidth;
+      final h = constraints.maxHeight;
+      return Stack(fit: StackFit.expand, children: [
+        Image.asset('assets/images/sitara_live_signup.png', fit: BoxFit.fill),
+        _artworkInput(_phoneCtrl, w * .225, h * .425, w * .69, h * .075,
+            keyboard: TextInputType.phone),
+        _artworkInput(_emailCtrl, w * .225, h * .520, w * .69, h * .075,
+            keyboard: TextInputType.emailAddress),
+        _artworkInput(_passwordCtrl, w * .225, h * .615, w * .69, h * .075,
+            obscure: _obscurePassword),
+        _artworkInput(_usernameCtrl, w * .225, h * .710, w * .69, h * .075,
+            keyboard: TextInputType.name),
+        Positioned(left: w * .105, top: h * .805, width: w * .79, height: h * .073,
+          child: Material(color: Colors.transparent, child: InkWell(
+            borderRadius: BorderRadius.circular(60),
+            onTap: _loading ? null : _submit,
+            child: Center(child: _loading
+              ? const SizedBox(width: 25, height: 25, child: CircularProgressIndicator(color: Color(0xFFFFD36A), strokeWidth: 2.5))
+              : const SizedBox.expand()),
+          )),
+        ),
+        // Footer area is a discreet navigation hotspot to the existing login view.
+        Positioned(left: w * .22, top: h * .925, width: w * .56, height: h * .055,
+          child: GestureDetector(onTap: () => setState(() { _isSignup = false; }),
+            child: const SizedBox.expand()),
+        ),
+      ]);
+    });
+  }
+
+  Widget _artworkInput(TextEditingController controller, double left, double top,
+      double width, double height,
+      {TextInputType keyboard = TextInputType.text, bool obscure = false}) {
+    return Positioned(left: left, top: top, width: width, height: height,
+      child: Center(child: TextField(
+        controller: controller,
+        keyboardType: keyboard,
+        obscureText: obscure,
+        textInputAction: controller == _usernameCtrl ? TextInputAction.done : TextInputAction.next,
+        onSubmitted: controller == _usernameCtrl ? (_) => _submit() : null,
+        style: const TextStyle(color: Colors.white, fontSize: 16),
+        decoration: const InputDecoration(
+          border: InputBorder.none, enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none, disabledBorder: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+          isDense: true,
+        ),
+      )),
     );
   }
 
