@@ -22,7 +22,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
-  bool _isSignup = true, _loading = false, _obscurePassword = true;
+  bool _isSignup = false, _loading = false, _obscurePassword = true;
   String _countryDialCode = '+92';
 
   String _fullPhone() {
@@ -174,66 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: bg,
       body: Stack(children: [
-        if (_isSignup) _buildSignupArtwork() else ...[
-        const Positioned.fill(child: _GalaxyBackdrop()),
-        SafeArea(child: LayoutBuilder(builder: (context, constraints) =>
-          SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight - 44),
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const SizedBox(height: 8),
-                Image.asset('assets/images/logo.png', width: 220, height: 185, fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => const Icon(Icons.auto_awesome, size: 112, color: gold)),
-                const Text('SITARA', style: TextStyle(fontFamily: 'serif', fontSize: 43, letterSpacing: 8, fontWeight: FontWeight.w700, color: brightGold, shadows: [Shadow(color: gold, blurRadius: 18)])),
-                const Text('L I V E', style: TextStyle(color: purple, fontSize: 21, letterSpacing: 8, fontWeight: FontWeight.bold, shadows: [Shadow(color: purple, blurRadius: 12)])),
-                const SizedBox(height: 7),
-                const Text('LIVE YOUR MOMENT', style: TextStyle(color: gold, fontSize: 10, letterSpacing: 5)),
-                const SizedBox(height: 28),
-                if (!_isSignup) ...[
-                  const Text('WELCOME BACK', style: TextStyle(color: brightGold, fontSize: 20, letterSpacing: 3, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 18),
-                ],
-                _phoneField(),
-                const SizedBox(height: 14),
-                _input(_emailCtrl, 'Email Address', Icons.mail_outline, keyboard: TextInputType.emailAddress),
-                const SizedBox(height: 14),
-                _input(_passwordCtrl, 'Password', Icons.lock_outline, obscure: _obscurePassword,
-                  suffix: IconButton(
-                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: gold),
-                  )),
-                if (_isSignup) ...[
-                  const SizedBox(height: 14),
-                  _input(_usernameCtrl, 'Username', Icons.person_outline, keyboard: TextInputType.name),
-                ] else ...[
-                  const SizedBox(height: 8),
-                  Align(alignment: Alignment.centerRight,
-                    child: TextButton(onPressed: _forgotPassword,
-                      child: const Text('Forgot Password?', style: TextStyle(color: brightGold, decoration: TextDecoration.underline)))),
-                ],
-                const SizedBox(height: 18),
-                _goldButton(_loading ? 'PLEASE WAIT...' : (_isSignup ? '♛   SIGN UP   ➜' : '♛   LOGIN   ➜'),
-                  _loading ? null : _submit),
-                const SizedBox(height: 20),
-                GestureDetector(
-                  onTap: _loading ? null : () => setState(() { _isSignup = !_isSignup; _passwordCtrl.clear(); }),
-                  child: RichText(textAlign: TextAlign.center, text: TextSpan(
-                    style: const TextStyle(color: Colors.white70, fontSize: 13),
-                    children: [
-                      TextSpan(text: _isSignup ? 'Already have an account? ' : "Don't have an account? "),
-                      TextSpan(text: _isSignup ? 'Login' : 'Sign Up',
-                        style: const TextStyle(color: brightGold, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
-                    ],
-                  )),
-                ),
-                const SizedBox(height: 24),
-                const Text('✦   CONNECT   ✦   LIVE   ✦   GROW   ✦', style: TextStyle(color: gold, fontSize: 10, letterSpacing: 2.5)),
-              ]),
-            ),
-          ),
-        )),
-        ],
+        _buildSignupArtwork(),
       ]),
     );
   }
@@ -263,7 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         // Footer area is a discreet navigation hotspot to the existing login view.
         Positioned(left: w * .22, top: h * .925, width: w * .56, height: h * .055,
-          child: GestureDetector(onTap: () => setState(() { _isSignup = false; }),
+          child: GestureDetector(onTap: _loading ? null : () => setState(() { _isSignup = !_isSignup; _passwordCtrl.clear(); }),
             child: const SizedBox.expand()),
         ),
       ]);
