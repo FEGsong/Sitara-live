@@ -7,56 +7,64 @@ import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const gold = Color(0xFFFFD36A);
-  static const brightGold = Color(0xFFFFE7A0);
-  static const purple = Color(0xFF9B35FF);
-  static const bg = Color(0xFF050208);
+  static const Color _gold = Color(0xFFFFD36A);
+  static const Color _lightGold = Color(0xFFFFE9A8);
+  static const Color _purple = Color(0xFFB52CFF);
+  static const Color _deepPurple = Color(0xFF210B35);
+  static const Color _background = Color(0xFF050208);
 
-  final _auth = AuthService();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _usernameCtrl = TextEditingController();
-  bool _isSignup = false, _loading = false, _obscurePassword = true;
-  String _countryDialCode = '+92';
+  final AuthService _auth = AuthService();
+  final TextEditingController _identityCtrl = TextEditingController();
+  final TextEditingController _phoneCtrl = TextEditingController();
+  final TextEditingController _emailCtrl = TextEditingController();
+  final TextEditingController _usernameCtrl = TextEditingController();
+  final TextEditingController _passwordCtrl = TextEditingController();
 
-  String _fullPhone() {
-    final phone = _phoneCtrl.text.trim().replaceAll(RegExp(r'[\s()-]'), '');
-    return phone.startsWith('+') ? phone : '$_countryDialCode$phone';
+  bool _isSignup = false;
+  bool _loading = false;
+  bool _hidePassword = true;
+  String _dialCode = '+92';
+
+  String _normalizedPhone(String value) {
+    final cleaned = value.trim().replaceAll(RegExp(r'[\s()-]'), '');
+    return cleaned.startsWith('+') ? cleaned : '$_dialCode$cleaned';
   }
 
-  void _toast(String message) {
+  void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: const Color(0xFF321044)),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: _deepPurple,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
   Future<void> _submit() async {
-    final phone = _phoneCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
+    final identity = _identityCtrl.text.trim();
     final password = _passwordCtrl.text;
+    final email = _isSignup ? _emailCtrl.text.trim() : (identity.contains('@') ? identity : '');
+    final phone = _isSignup ? _phoneCtrl.text.trim() : (identity.contains('@') ? '' : identity);
+
     if (_isSignup) {
       if (phone.isEmpty || email.isEmpty || _usernameCtrl.text.trim().isEmpty) {
-        _toast('Phone number, email and username are required');
+        _showMessage('Phone, email and username are required.');
         return;
       }
       if (password.length < 6) {
-        _toast('Password should be at least 6 characters');
+        _showMessage('Password must be at least 6 characters.');
         return;
       }
     } else {
-      if (phone.isEmpty && email.isEmpty) {
-        _toast('Enter your phone number or email address');
-        return;
-      }
-      if (password.isEmpty) {
-        _toast('Password is required');
+      if (identity.isEmpty || password.isEmpty) {
+        _showMessage('Enter your email/phone and password.');
         return;
       }
     }
@@ -65,96 +73,118 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final credential = _isSignup
           ? await _auth.signUp(
-              phone: _fullPhone(), email: email, password: password,
+              phone: _normalizedPhone(phone),
+              email: email,
+              password: password,
               username: _usernameCtrl.text.trim(),
-            ).timeout(const Duration(seconds: 30),
-              onTimeout: () => throw Exception('Request timed out. Check your internet connection.'))
+            )
           : await _auth.signIn(
-              phone: phone.isEmpty ? '' : _fullPhone(),
-              email: email, password: password,
+              phone: phone.isEmpty ? '' : _normalizedPhone(phone),
+              email: email,
+              password: password,
             );
 
-      if (credential.user == null) throw Exception('Authentication failed.');
+      if (credential.user == null) {
+        throw Exception('Authentication could not be completed.');
+      }
       AppState.instance.uid = credential.user!.uid;
       await _auth.ensureSupabaseRole();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
-    } on FirebaseAuthException catch (e) {
-      if (mounted) _showError('Authentication Error', _friendlyError(e));
-    } catch (e) {
-      if (mounted) _showError('Error', e.toString().replaceFirst('Exception: ', ''));
+    } on FirebaseAuthException catch (error) {
+      _showMessage(_friendlyError(error));
+    } catch (error) {
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  String _friendlyError(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'email-already-in-use': return 'This email already exists. Try logging in.';
-      case 'weak-password': return 'Password should be at least 6 characters.';
-      case 'invalid-email': return 'Please enter a valid email address.';
+  String _friendlyError(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'email-already-in-use':
+        return 'This email is already registered. Please log in.';
+      case 'weak-password':
+        return 'Password must be at least 6 characters.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
       case 'user-not-found':
       case 'wrong-password':
-      case 'invalid-credential': return 'Incorrect phone/email or password.';
-      case 'network-request-failed': return 'Network error. Check your internet connection.';
-      default: return e.message ?? 'Authentication failed.';
+      case 'invalid-credential':
+        return 'Incorrect email/phone or password.';
+      case 'network-request-failed':
+        return 'Network error. Please check your connection.';
+      default:
+        return error.message ?? 'Authentication failed.';
     }
   }
 
-  void _showError(String title, String message) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1B1024),
-        title: Text(title, style: const TextStyle(color: brightGold)),
-        content: Text(message),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx),
-          child: const Text('OK', style: TextStyle(color: gold)))],
-      ),
-    );
-  }
-
   Future<void> _forgotPassword() async {
-    final controller = TextEditingController(text: _emailCtrl.text.trim());
-    bool sending = false, sent = false;
+    final controller = TextEditingController(
+      text: _identityCtrl.text.contains('@') ? _identityCtrl.text.trim() : '',
+    );
+    bool sending = false;
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF160B20),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        side: BorderSide(color: gold),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        side: BorderSide(color: _gold, width: 1),
       ),
-      builder: (sheetCtx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.fromLTRB(22, 24, 22, MediaQuery.of(ctx).viewInsets.bottom + 28),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            22, 25, 22, MediaQuery.of(context).viewInsets.bottom + 25,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Forgot Password?', style: TextStyle(color: brightGold, fontSize: 21, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              Text(sent ? 'If an account exists for this email, a reset link has been sent.' : 'Enter your registered email address to receive a reset link.', style: const TextStyle(color: Colors.white70, height: 1.5)),
+              const Text(
+                'Forgot Password?',
+                style: TextStyle(
+                  color: _lightGold, fontSize: 22, fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 9),
+              const Text(
+                'Enter your registered email address and we will send you a reset link.',
+                style: TextStyle(color: Colors.white70, height: 1.45),
+              ),
               const SizedBox(height: 18),
-              if (!sent) ...[
-                _input(controller, 'Email Address', Icons.mail_outline, keyboard: TextInputType.emailAddress),
-                const SizedBox(height: 16),
-                _goldButton(sending ? 'SENDING...' : 'SEND RESET LINK', sending ? null : () async {
-                  if (controller.text.trim().isEmpty) { _toast('Enter your email address'); return; }
-                  setSheet(() => sending = true);
-                  try {
-                    await _auth.sendPasswordReset(controller.text.trim());
-                    setSheet(() { sending = false; sent = true; });
-                  } on FirebaseAuthException catch (e) {
-                    setSheet(() => sending = false);
-                    _toast(e.message ?? 'Could not send reset email.');
-                  } catch (_) {
-                    setSheet(() => sending = false);
-                    _toast('Could not send reset email.');
-                  }
-                }),
-              ] else
-                _goldButton('DONE', () => Navigator.pop(sheetCtx)),
+              _field(
+                controller: controller,
+                hint: 'Email Address',
+                icon: Icons.mail_outline,
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 17),
+              _goldButton(
+                label: sending ? 'SENDING...' : 'SEND RESET LINK',
+                onPressed: sending
+                    ? null
+                    : () async {
+                        if (controller.text.trim().isEmpty) {
+                          _showMessage('Enter your email address.');
+                          return;
+                        }
+                        setSheetState(() => sending = true);
+                        try {
+                          await _auth.sendPasswordReset(controller.text.trim());
+                          if (sheetContext.mounted) {
+                            Navigator.pop(sheetContext);
+                          }
+                          _showMessage('If the account exists, a reset link has been sent.');
+                        } on FirebaseAuthException catch (error) {
+                          setSheetState(() => sending = false);
+                          _showMessage(error.message ?? 'Could not send reset email.');
+                        }
+                      },
+              ),
             ],
           ),
         ),
@@ -165,205 +195,402 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _phoneCtrl.dispose(); _emailCtrl.dispose(); _passwordCtrl.dispose(); _usernameCtrl.dispose();
+    _identityCtrl.dispose();
+    _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _usernameCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: bg,
-      body: Stack(children: [
-        _buildSignupArtwork(),
-      ]),
-    );
-  }
-
-  Widget _buildSignupArtwork() {
-    return LayoutBuilder(builder: (context, constraints) {
-      final w = constraints.maxWidth;
-      final h = constraints.maxHeight;
-      return Stack(fit: StackFit.expand, children: [
-        Image.asset('assets/images/sitara_live_signup.png', fit: BoxFit.fill),
-        _artworkInput(_phoneCtrl, w * .225, h * .425, w * .69, h * .075,
-            keyboard: TextInputType.phone),
-        _artworkInput(_emailCtrl, w * .225, h * .520, w * .69, h * .075,
-            keyboard: TextInputType.emailAddress),
-        _artworkInput(_passwordCtrl, w * .225, h * .615, w * .69, h * .075,
-            obscure: _obscurePassword),
-        _artworkInput(_usernameCtrl, w * .225, h * .710, w * .69, h * .075,
-            keyboard: TextInputType.name),
-        Positioned(left: w * .105, top: h * .805, width: w * .79, height: h * .073,
-          child: Material(color: Colors.transparent, child: InkWell(
-            borderRadius: BorderRadius.circular(60),
-            onTap: _loading ? null : _submit,
-            child: Center(child: _loading
-              ? const SizedBox(width: 25, height: 25, child: CircularProgressIndicator(color: Color(0xFFFFD36A), strokeWidth: 2.5))
-              : const SizedBox.expand()),
-          )),
+      backgroundColor: _background,
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              children: [
+                const Positioned.fill(child: _RoyalBackdrop()),
+                SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(25, 22, 25, 28),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: constraints.maxHeight - 50),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: 15),
+                        _brand(),
+                        const SizedBox(height: 24),
+                        Text(
+                          _isSignup ? 'CREATE ACCOUNT' : 'LOGIN',
+                          style: const TextStyle(
+                            color: _lightGold,
+                            fontSize: 25,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 7,
+                            shadows: [Shadow(color: _purple, blurRadius: 15)],
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        if (_isSignup) ...[
+                          _field(
+                            controller: _phoneCtrl,
+                            hint: 'Phone Number',
+                            icon: Icons.phone_iphone,
+                            keyboardType: TextInputType.phone,
+                            prefix: _countryPicker(),
+                          ),
+                          const SizedBox(height: 17),
+                          _field(
+                            controller: _emailCtrl,
+                            hint: 'Email Address',
+                            icon: Icons.mail_outline,
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 17),
+                          _passwordField(),
+                          const SizedBox(height: 17),
+                          _field(
+                            controller: _usernameCtrl,
+                            hint: 'Username',
+                            icon: Icons.person_outline,
+                          ),
+                        ] else ...[
+                          _field(
+                            controller: _identityCtrl,
+                            hint: 'Email / Phone',
+                            icon: Icons.mail_outline,
+                            keyboardType: TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 19),
+                          _passwordField(),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _loading ? null : _forgotPassword,
+                              child: const Text(
+                                'Forgot Password?',
+                                style: TextStyle(
+                                  color: _lightGold,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 20),
+                        _goldButton(
+                          label: _loading
+                              ? 'PLEASE WAIT...'
+                              : (_isSignup ? 'SIGN UP' : 'LOGIN'),
+                          onPressed: _loading ? null : _submit,
+                        ),
+                        const SizedBox(height: 25),
+                        Container(
+                          height: 1,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.transparent, _gold, _purple, Colors.transparent],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 17),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(
+                              _isSignup ? 'Already have an account? ' : "Don't have an account? ",
+                              style: const TextStyle(color: _lightGold, fontSize: 15),
+                            ),
+                            TextButton(
+                              onPressed: _loading
+                                  ? null
+                                  : () => setState(() {
+                                        _isSignup = !_isSignup;
+                                        _identityCtrl.clear();
+                                        _phoneCtrl.clear();
+                                        _emailCtrl.clear();
+                                        _usernameCtrl.clear();
+                                        _passwordCtrl.clear();
+                                      }),
+                              child: Text(
+                                _isSignup ? 'Login' : 'Sign Up',
+                                style: const TextStyle(
+                                  color: _purple,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
-        // Footer area is a discreet navigation hotspot to the existing login view.
-        Positioned(left: w * .22, top: h * .925, width: w * .56, height: h * .055,
-          child: GestureDetector(onTap: _loading ? null : () => setState(() { _isSignup = !_isSignup; _passwordCtrl.clear(); }),
-            child: const SizedBox.expand()),
-        ),
-      ]);
-    });
-  }
-
-  Widget _artworkInput(TextEditingController controller, double left, double top,
-      double width, double height,
-      {TextInputType keyboard = TextInputType.text, bool obscure = false}) {
-    return Positioned(left: left, top: top, width: width, height: height,
-      child: Center(child: TextField(
-        controller: controller,
-        keyboardType: keyboard,
-        obscureText: obscure,
-        textInputAction: controller == _usernameCtrl ? TextInputAction.done : TextInputAction.next,
-        onSubmitted: controller == _usernameCtrl ? (_) => _submit() : null,
-        style: const TextStyle(color: Colors.white, fontSize: 16),
-        decoration: const InputDecoration(
-          border: InputBorder.none, enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none, disabledBorder: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 12),
-          isDense: true,
-        ),
-      )),
-    );
-  }
-
-  Widget _phoneField() => _glowingField(Row(children: [
-    CountryCodePicker(
-      initialSelection: 'PK', favorite: const ['PK', 'AE', 'SA', 'GB', 'US'],
-      showCountryOnly: false, showOnlyCountryWhenClosed: false, showFlag: true,
-      showFlagDialog: true, hideSearch: false,
-      comparator: (a, b) => (a.name ?? '').compareTo(b.name ?? ''),
-      padding: const EdgeInsets.only(left: 5),
-      textStyle: const TextStyle(color: brightGold, fontSize: 13),
-      searchDecoration: const InputDecoration(hintText: 'Search country or code'),
-      onChanged: (country) => setState(() => _countryDialCode = country.dialCode ?? '+92'),
-      onInit: (country) => _countryDialCode = country?.dialCode ?? '+92',
-    ),
-    Container(width: 1, height: 28, color: gold.withOpacity(.65)),
-    Expanded(child: TextField(controller: _phoneCtrl, keyboardType: TextInputType.phone,
-      style: const TextStyle(color: Colors.white, fontSize: 14),
-      decoration: const InputDecoration(hintText: 'Phone Number', hintStyle: TextStyle(color: Colors.white70),
-        border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
-        filled: false, contentPadding: EdgeInsets.symmetric(horizontal: 13, vertical: 17)))),
-  ]));
-
-  Widget _input(TextEditingController controller, String hint, IconData icon,
-      {TextInputType keyboard = TextInputType.text, bool obscure = false, Widget? suffix}) =>
-    _glowingField(Row(children: [
-      Padding(padding: const EdgeInsets.only(left: 13, right: 12), child: Icon(icon, color: gold, size: 25)),
-      Container(width: 1, height: 28, color: gold.withOpacity(.65)),
-      Expanded(child: TextField(controller: controller, keyboardType: keyboard, obscureText: obscure,
-        style: const TextStyle(color: Colors.white, fontSize: 14),
-        decoration: InputDecoration(hintText: hint, hintStyle: const TextStyle(color: Colors.white70),
-          border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
-          filled: false, contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 17), suffixIcon: suffix))),
-    ]));
-
-  Widget _glowingField(Widget child) => Container(
-    decoration: BoxDecoration(borderRadius: BorderRadius.circular(40),
-      gradient: const LinearGradient(colors: [brightGold, purple, gold, purple, brightGold]),
-      boxShadow: [BoxShadow(color: purple.withOpacity(.30), blurRadius: 13), BoxShadow(color: gold.withOpacity(.16), blurRadius: 18)]),
-    padding: const EdgeInsets.all(1.7),
-    child: Container(decoration: BoxDecoration(color: const Color(0xFF100B18), borderRadius: BorderRadius.circular(38)), child: child),
-  );
-
-  Widget _goldButton(String label, VoidCallback? onPressed) => Container(
-    width: double.infinity,
-    decoration: BoxDecoration(borderRadius: BorderRadius.circular(40),
-      gradient: const LinearGradient(colors: [brightGold, Color(0xFFB87918), gold, Color(0xFF8B4B0B)]),
-      boxShadow: [BoxShadow(color: gold.withOpacity(.28), blurRadius: 17), BoxShadow(color: purple.withOpacity(.20), blurRadius: 12)]),
-    padding: const EdgeInsets.all(2),
-    child: ElevatedButton(onPressed: onPressed,
-      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF170C20), foregroundColor: brightGold,
-        disabledBackgroundColor: const Color(0xFF302034), elevation: 0, shape: const StadiumBorder(),
-        padding: const EdgeInsets.symmetric(vertical: 17)),
-      child: Text(label, style: const TextStyle(color: brightGold, fontWeight: FontWeight.bold, letterSpacing: 3, fontSize: 15))),
-  );
-}
-
-class _GalaxyBackdrop extends StatelessWidget {
-  const _GalaxyBackdrop();
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: const BoxDecoration(
-      gradient: RadialGradient(
-        center: Alignment(0, -.48),
-        radius: 1.28,
-        colors: [Color(0xFF351052), Color(0xFF180923), Color(0xFF09040F), Color(0xFF030207)],
-        stops: [0, .38, .76, 1],
       ),
-    ),
-    child: CustomPaint(painter: _StarsPainter()),
-  );
+    );
+  }
+
+  Widget _brand() {
+    return Column(
+      children: [
+        Container(
+          width: 132,
+          height: 132,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: _gold, width: 1.6),
+            boxShadow: const [
+              BoxShadow(color: _purple, blurRadius: 24, spreadRadius: 1),
+              BoxShadow(color: _gold, blurRadius: 12),
+            ],
+            gradient: const RadialGradient(
+              colors: [Color(0xFF32104A), Color(0xFF08040D)],
+            ),
+          ),
+          child: ClipOval(
+            child: Padding(
+              padding: const EdgeInsets.all(13),
+              child: Image.asset(
+                'assets/images/logo.png',
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.auto_awesome,
+                  color: _gold,
+                  size: 70,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'SITARA',
+          style: TextStyle(
+            color: _lightGold,
+            fontSize: 43,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 8,
+            shadows: [Shadow(color: _gold, blurRadius: 18)],
+          ),
+        ),
+        const Text(
+          'L I V E',
+          style: TextStyle(
+            color: _purple,
+            fontSize: 21,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 8,
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          'LIVE YOUR MOMENT',
+          style: TextStyle(color: _gold, fontSize: 10, letterSpacing: 4),
+        ),
+      ],
+    );
+  }
+
+  Widget _countryPicker() {
+    return CountryCodePicker(
+      initialSelection: 'PK',
+      showCountryOnly: false,
+      showOnlyCountryWhenClosed: false,
+      showFlag: true,
+      showFlagDialog: true,
+      hideSearch: false,
+      comparator: (a, b) => (a.name ?? '').compareTo(b.name ?? ''),
+      favorite: const ['PK', 'AE', 'SA', 'GB', 'US'],
+      padding: const EdgeInsets.only(left: 8),
+      textStyle: const TextStyle(color: _lightGold, fontSize: 13),
+      onChanged: (country) => _dialCode = country.dialCode ?? '+92',
+      onInit: (country) => _dialCode = country?.dialCode ?? '+92',
+    );
+  }
+
+  Widget _passwordField() {
+    return _field(
+      controller: _passwordCtrl,
+      hint: 'Password',
+      icon: Icons.lock_outline,
+      obscureText: _hidePassword,
+      suffix: IconButton(
+        onPressed: () => setState(() => _hidePassword = !_hidePassword),
+        icon: Icon(
+          _hidePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+          color: _gold,
+        ),
+      ),
+    );
+  }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+    bool obscureText = false,
+    Widget? suffix,
+    Widget? prefix,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(42),
+        gradient: const LinearGradient(
+          colors: [_lightGold, _purple, _gold, _purple, _lightGold],
+        ),
+        boxShadow: [
+          BoxShadow(color: _purple.withOpacity(.28), blurRadius: 16),
+          BoxShadow(color: _gold.withOpacity(.12), blurRadius: 20),
+        ],
+      ),
+      padding: const EdgeInsets.all(1.7),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF100B18),
+          borderRadius: BorderRadius.circular(40),
+        ),
+        child: Row(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(left: 15, right: 11),
+              child: Icon(icon, color: _gold, size: 24),
+            ),
+            Container(width: 1, height: 30, color: _gold.withOpacity(.65)),
+            if (prefix != null) prefix,
+            Expanded(
+              child: TextField(
+                controller: controller,
+                keyboardType: keyboardType,
+                obscureText: obscureText,
+                style: const TextStyle(color: Colors.white, fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: hint,
+                  hintStyle: const TextStyle(color: Colors.white70),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 18),
+                  suffixIcon: suffix,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _goldButton({required String label, required VoidCallback? onPressed}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(45),
+        gradient: const LinearGradient(
+          colors: [_lightGold, Color(0xFFB87918), _gold, Color(0xFF8B4B0B)],
+        ),
+        boxShadow: [
+          BoxShadow(color: _gold.withOpacity(.25), blurRadius: 17),
+          BoxShadow(color: _purple.withOpacity(.22), blurRadius: 14),
+        ],
+      ),
+      padding: const EdgeInsets.all(2),
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF170C20),
+          disabledBackgroundColor: const Color(0xFF302034),
+          foregroundColor: _lightGold,
+          elevation: 0,
+          shape: const StadiumBorder(),
+          padding: const EdgeInsets.symmetric(vertical: 17),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: _lightGold,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 4,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _StarsPainter extends CustomPainter {
+class _RoyalBackdrop extends StatelessWidget {
+  const _RoyalBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0, -.45),
+          radius: 1.25,
+          colors: [
+            Color(0xFF351052),
+            Color(0xFF180923),
+            Color(0xFF09040F),
+            Color(0xFF030207),
+          ],
+          stops: [0, .38, .76, 1],
+        ),
+      ),
+      child: CustomPaint(painter: _CornerGlowPainter()),
+    );
+  }
+}
+
+class _CornerGlowPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final gold = const Color(0xFFFFD36A);
-    final purple = const Color(0xFFB45CFF);
-    final paint = Paint()..style = PaintingStyle.stroke;
-
-    // Soft nebula haze behind the unchanged login form.
-    paint
-      ..style = PaintingStyle.fill
-      ..color = purple.withOpacity(.075)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 42);
-    canvas.drawCircle(Offset(size.width * .12, size.height * .28), size.width * .34, paint);
-    canvas.drawCircle(Offset(size.width * .91, size.height * .62), size.width * .30, paint);
-
-    // Fine celestial arcs add a subtle royal-galaxy frame without covering controls.
-    paint
+    final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..maskFilter = null
-      ..strokeWidth = 1.1
-      ..color = gold.withOpacity(.22);
-    final arcRect = Rect.fromCenter(
-      center: Offset(size.width * .5, size.height * .47),
-      width: size.width * 1.42,
-      height: size.height * .70,
-    );
-    canvas.drawArc(arcRect, 3.52, 2.28, false, paint);
-    paint
-      ..strokeWidth = .7
-      ..color = purple.withOpacity(.30);
-    canvas.drawArc(arcRect.deflate(13), 3.58, 2.16, false, paint);
+      ..strokeWidth = 2;
+    final gold = const Color(0xFFFFD36A);
+    final purple = const Color(0xFFB52CFF);
 
-    final points = <Offset>[
-      Offset(size.width * .08, size.height * .12),
-      Offset(size.width * .87, size.height * .10),
-      Offset(size.width * .17, size.height * .33),
-      Offset(size.width * .92, size.height * .37),
-      Offset(size.width * .10, size.height * .67),
-      Offset(size.width * .88, size.height * .72),
-      Offset(size.width * .23, size.height * .88),
-      Offset(size.width * .78, size.height * .91),
-      Offset(size.width * .50, size.height * .06),
-      Offset(size.width * .42, size.height * .96),
-    ];
-    for (var i = 0; i < points.length; i++) {
-      final point = points[i];
+    for (final isRight in [false, true]) {
+      final x = isRight ? size.width : 0.0;
+      final direction = isRight ? -1.0 : 1.0;
+      final topPath = Path()
+        ..moveTo(x, 0)
+        ..cubicTo(x + direction * 70, 18, x + direction * 45, 80, x + direction * 115, 115);
       paint
-        ..style = PaintingStyle.fill
-        ..color = gold.withOpacity(i.isEven ? .78 : .48);
-      canvas.drawCircle(point, i.isEven ? 1.7 : 1.1, paint);
-      paint.color = purple.withOpacity(.16);
-      canvas.drawCircle(point, i.isEven ? 6 : 4.5, paint);
-    }
+        ..color = gold.withOpacity(.72)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+      canvas.drawPath(topPath, paint);
+      paint
+        ..color = purple.withOpacity(.78)
+        ..strokeWidth = 5
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+      canvas.drawPath(topPath, paint);
 
-    // A few small four-point star glints near the outer edges.
-    for (final point in [Offset(size.width * .06, size.height * .48), Offset(size.width * .94, size.height * .22), Offset(size.width * .83, size.height * .84)]) {
+      final bottomPath = Path()
+        ..moveTo(x, size.height)
+        ..cubicTo(x + direction * 65, size.height - 25, x + direction * 45, size.height - 85, x + direction * 125, size.height - 120);
       paint
-        ..color = gold.withOpacity(.55)
-        ..strokeWidth = 1.0
-        ..style = PaintingStyle.stroke;
-      canvas.drawLine(point.translate(-4, 0), point.translate(4, 0), paint);
-      canvas.drawLine(point.translate(0, -4), point.translate(0, 4), paint);
+        ..color = gold.withOpacity(.72)
+        ..strokeWidth = 2
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+      canvas.drawPath(bottomPath, paint);
+      paint
+        ..color = purple.withOpacity(.78)
+        ..strokeWidth = 5
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+      canvas.drawPath(bottomPath, paint);
     }
   }
 
