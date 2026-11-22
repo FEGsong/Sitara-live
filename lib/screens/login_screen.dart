@@ -207,135 +207,156 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return Stack(
-              children: [
-                const Positioned.fill(child: _RoyalBackdrop()),
-                SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(25, 22, 25, 28),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight - 50),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: 15),
-                        _brand(),
-                        const SizedBox(height: 24),
-                        Text(
-                          _isSignup ? 'CREATE ACCOUNT' : 'LOGIN',
-                          style: const TextStyle(
-                            color: _lightGold,
-                            fontSize: 25,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 7,
-                            shadows: [Shadow(color: _purple, blurRadius: 15)],
-                          ),
+      resizeToAvoidBottomInset: true,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final designHeight = constraints.maxHeight > constraints.maxWidth * 1.78
+              ? constraints.maxHeight
+              : constraints.maxWidth * 1.78;
+          final w = constraints.maxWidth;
+          final h = designHeight;
+          return SingleChildScrollView(
+            child: SizedBox(
+              width: w,
+              height: h,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.asset(
+                    'assets/images/sitara_live_signup.png',
+                    fit: BoxFit.fill,
+                    errorBuilder: (_, __, ___) => const _RoyalBackdrop(),
+                  ),
+                  if (_isSignup) ...[
+                    _positionedInput(w, h, .445, .055, _phoneCtrl,
+                      'Phone Number', TextInputType.phone,
+                      prefix: _countryPicker()),
+                    _positionedInput(w, h, .545, .055, _emailCtrl,
+                      'Email Address', TextInputType.emailAddress),
+                    _positionedInput(w, h, .645, .055, _passwordCtrl,
+                      'Password', TextInputType.visiblePassword,
+                      obscureText: _hidePassword,
+                      suffix: IconButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => setState(() => _hidePassword = !_hidePassword),
+                        icon: Icon(_hidePassword ? Icons.visibility_off : Icons.visibility,
+                          color: _gold, size: 19),
+                      )),
+                    _positionedInput(w, h, .745, .055, _usernameCtrl,
+                      'Username', TextInputType.text),
+                  ] else ...[
+                    _positionedInput(w, h, .545, .065, _identityCtrl,
+                      'Email / Phone', TextInputType.emailAddress),
+                    _positionedInput(w, h, .665, .065, _passwordCtrl,
+                      'Password', TextInputType.visiblePassword,
+                      obscureText: _hidePassword,
+                      suffix: IconButton(
+                        padding: EdgeInsets.zero,
+                        onPressed: () => setState(() => _hidePassword = !_hidePassword),
+                        icon: Icon(_hidePassword ? Icons.visibility_off : Icons.visibility,
+                          color: _gold, size: 19),
+                      )),
+                  ],
+                  Positioned(
+                    left: w * .10,
+                    right: w * .10,
+                    top: h * (_isSignup ? .842 : .785),
+                    height: h * .075,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(50),
+                        onTap: _loading ? null : _submit,
+                        child: Center(
+                          child: _loading
+                              ? const CircularProgressIndicator(color: _gold)
+                              : const SizedBox.expand(),
                         ),
-                        const SizedBox(height: 28),
-                        if (_isSignup) ...[
-                          _field(
-                            controller: _phoneCtrl,
-                            hint: 'Phone Number',
-                            icon: Icons.phone_iphone,
-                            keyboardType: TextInputType.phone,
-                            prefix: _countryPicker(),
-                          ),
-                          const SizedBox(height: 17),
-                          _field(
-                            controller: _emailCtrl,
-                            hint: 'Email Address',
-                            icon: Icons.mail_outline,
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          const SizedBox(height: 17),
-                          _passwordField(),
-                          const SizedBox(height: 17),
-                          _field(
-                            controller: _usernameCtrl,
-                            hint: 'Username',
-                            icon: Icons.person_outline,
-                          ),
-                        ] else ...[
-                          _field(
-                            controller: _identityCtrl,
-                            hint: 'Email / Phone',
-                            icon: Icons.mail_outline,
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          const SizedBox(height: 19),
-                          _passwordField(),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _loading ? null : _forgotPassword,
-                              child: const Text(
-                                'Forgot Password?',
-                                style: TextStyle(
-                                  color: _lightGold,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        _goldButton(
-                          label: _loading
-                              ? 'PLEASE WAIT...'
-                              : (_isSignup ? 'SIGN UP' : 'LOGIN'),
-                          onPressed: _loading ? null : _submit,
-                        ),
-                        const SizedBox(height: 25),
-                        Container(
-                          height: 1,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.transparent, _gold, _purple, Colors.transparent],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 17),
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              _isSignup ? 'Already have an account? ' : "Don't have an account? ",
-                              style: const TextStyle(color: _lightGold, fontSize: 15),
-                            ),
-                            TextButton(
-                              onPressed: _loading
-                                  ? null
-                                  : () => setState(() {
-                                        _isSignup = !_isSignup;
-                                        _identityCtrl.clear();
-                                        _phoneCtrl.clear();
-                                        _emailCtrl.clear();
-                                        _usernameCtrl.clear();
-                                        _passwordCtrl.clear();
-                                      }),
-                              child: Text(
-                                _isSignup ? 'Login' : 'Sign Up',
-                                style: const TextStyle(
-                                  color: _purple,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-            );
-          },
-        ),
+                  if (!_isSignup)
+                    Positioned(
+                      right: w * .10,
+                      top: h * .735,
+                      child: TextButton(
+                        onPressed: _loading ? null : _forgotPassword,
+                        child: const Text('Forgot Password?',
+                          style: TextStyle(color: _lightGold)),
+                      ),
+                    ),
+                  Positioned(
+                    left: w * .15,
+                    right: w * .15,
+                    bottom: h * .018,
+                    height: h * .045,
+                    child: TextButton(
+                      onPressed: _loading ? null : () => setState(() {
+                        _isSignup = !_isSignup;
+                        _identityCtrl.clear();
+                        _phoneCtrl.clear();
+                        _emailCtrl.clear();
+                        _usernameCtrl.clear();
+                        _passwordCtrl.clear();
+                      }),
+                      child: Text(
+                        _isSignup ? 'Already have an account? Login' : "Don't have an account? Sign Up",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: _lightGold, fontSize: 12,
+                          fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _positionedInput(
+    double width,
+    double height,
+    double top,
+    double fieldHeight,
+    TextEditingController controller,
+    String hint,
+    TextInputType keyboardType, {
+    bool obscureText = false,
+    Widget? suffix,
+    Widget? prefix,
+  }) {
+    return Positioned(
+      left: width * .245,
+      right: width * .105,
+      top: height * top,
+      height: height * fieldHeight,
+      child: Row(
+        children: [
+          if (prefix != null)
+            SizedBox(width: width * .14, child: prefix),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              obscureText: obscureText,
+              textAlignVertical: TextAlignVertical.center,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: const TextStyle(color: Colors.white70, fontSize: 14),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                suffixIcon: suffix,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
