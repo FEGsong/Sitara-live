@@ -1,6 +1,8 @@
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:country_code_picker/country_code_picker.dart';
+
 import '../models/app_state.dart';
 import '../services/auth_service.dart';
 import 'home_screen.dart';
@@ -16,60 +18,114 @@ class _LoginScreenState extends State<LoginScreen> {
   static const Color _gold = Color(0xFFFFD36A);
   static const Color _lightGold = Color(0xFFFFE9A8);
   static const Color _purple = Color(0xFFB52CFF);
-  static const Color _deepPurple = Color(0xFF210B35);
   static const Color _background = Color(0xFF050208);
 
+  // Original signup image dimensions.
+  static const double _designWidth = 901;
+  static const double _designHeight = 1600;
+
   final AuthService _auth = AuthService();
+
   final TextEditingController _identityCtrl = TextEditingController();
   final TextEditingController _phoneCtrl = TextEditingController();
   final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _usernameCtrl = TextEditingController();
   final TextEditingController _passwordCtrl = TextEditingController();
 
-  bool _isSignup = false;
+  bool _isSignup = true;
   bool _loading = false;
   bool _hidePassword = true;
+
   String _dialCode = '+92';
 
   String _normalizedPhone(String value) {
-    final cleaned = value.trim().replaceAll(RegExp(r'[\s()-]'), '');
-    return cleaned.startsWith('+') ? cleaned : '$_dialCode$cleaned';
+    final cleaned = value.trim().replaceAll(
+      RegExp(r'[\s()-]'),
+      '',
+    );
+
+    return cleaned.startsWith('+')
+        ? cleaned
+        : '$_dialCode$cleaned';
   }
 
   void _showMessage(String message) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: _deepPurple,
+        backgroundColor: const Color(0xFF210B35),
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
+  String _friendlyError(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'email-already-in-use':
+        return 'This email is already registered. Please log in.';
+
+      case 'weak-password':
+        return 'Password must be at least 6 characters.';
+
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Incorrect email/phone or password.';
+
+      case 'network-request-failed':
+        return 'Network error. Please check your connection.';
+
+      default:
+        return error.message ?? 'Authentication failed.';
+    }
+  }
+
   Future<void> _submit() async {
-    final identity = _identityCtrl.text.trim();
     final password = _passwordCtrl.text;
-    final email = _isSignup ? _emailCtrl.text.trim() : (identity.contains('@') ? identity : '');
-    final phone = _isSignup ? _phoneCtrl.text.trim() : (identity.contains('@') ? '' : identity);
+
+    final email = _isSignup
+        ? _emailCtrl.text.trim()
+        : (_identityCtrl.text.trim().contains('@')
+            ? _identityCtrl.text.trim()
+            : '');
+
+    final phone = _isSignup
+        ? _phoneCtrl.text.trim()
+        : (email.isEmpty ? _identityCtrl.text.trim() : '');
 
     if (_isSignup) {
-      if (phone.isEmpty || email.isEmpty || _usernameCtrl.text.trim().isEmpty) {
-        _showMessage('Phone, email and username are required.');
+      if (phone.isEmpty ||
+          email.isEmpty ||
+          _usernameCtrl.text.trim().isEmpty) {
+        _showMessage(
+          'Phone, email and username are required.',
+        );
         return;
       }
+
       if (password.length < 6) {
-        _showMessage('Password must be at least 6 characters.');
+        _showMessage(
+          'Password must be at least 6 characters.',
+        );
         return;
       }
     } else {
-      if (identity.isEmpty || password.isEmpty) {
-        _showMessage('Enter your email/phone and password.');
+      if (_identityCtrl.text.trim().isEmpty ||
+          password.isEmpty) {
+        _showMessage(
+          'Enter your email/phone and password.',
+        );
         return;
       }
     }
 
     setState(() => _loading = true);
+
     try {
       final credential = _isSignup
           ? await _auth.signUp(
@@ -79,52 +135,50 @@ class _LoginScreenState extends State<LoginScreen> {
               username: _usernameCtrl.text.trim(),
             )
           : await _auth.signIn(
-              phone: phone.isEmpty ? '' : _normalizedPhone(phone),
+              phone: phone.isEmpty
+                  ? ''
+                  : _normalizedPhone(phone),
               email: email,
               password: password,
             );
 
       if (credential.user == null) {
-        throw Exception('Authentication could not be completed.');
+        throw Exception(
+          'Authentication could not be completed.',
+        );
       }
+
       AppState.instance.uid = credential.user!.uid;
+
       await _auth.ensureSupabaseRole();
+
       if (!mounted) return;
+
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(
+          builder: (_) => const HomeScreen(),
+        ),
       );
     } on FirebaseAuthException catch (error) {
       _showMessage(_friendlyError(error));
     } catch (error) {
-      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      _showMessage(
+        error.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  String _friendlyError(FirebaseAuthException error) {
-    switch (error.code) {
-      case 'email-already-in-use':
-        return 'This email is already registered. Please log in.';
-      case 'weak-password':
-        return 'Password must be at least 6 characters.';
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'user-not-found':
-      case 'wrong-password':
-      case 'invalid-credential':
-        return 'Incorrect email/phone or password.';
-      case 'network-request-failed':
-        return 'Network error. Please check your connection.';
-      default:
-        return error.message ?? 'Authentication failed.';
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   Future<void> _forgotPassword() async {
     final controller = TextEditingController(
-      text: _identityCtrl.text.contains('@') ? _identityCtrl.text.trim() : '',
+      text: _identityCtrl.text.contains('@')
+          ? _identityCtrl.text.trim()
+          : '',
     );
+
     bool sending = false;
 
     await showModalBottomSheet<void>(
@@ -132,65 +186,149 @@ class _LoginScreenState extends State<LoginScreen> {
       isScrollControlled: true,
       backgroundColor: const Color(0xFF160B20),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(26),
+        ),
         side: BorderSide(color: _gold, width: 1),
       ),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => Padding(
-          padding: EdgeInsets.fromLTRB(
-            22, 25, 22, MediaQuery.of(context).viewInsets.bottom + 25,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Forgot Password?',
-                style: TextStyle(
-                  color: _lightGold, fontSize: 22, fontWeight: FontWeight.bold,
-                ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                22,
+                25,
+                22,
+                MediaQuery.of(context).viewInsets.bottom + 25,
               ),
-              const SizedBox(height: 9),
-              const Text(
-                'Enter your registered email address and we will send you a reset link.',
-                style: TextStyle(color: Colors.white70, height: 1.45),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Forgot Password?',
+                    style: TextStyle(
+                      color: _lightGold,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  const Text(
+                    'Enter your registered email address and we will send you a reset link.',
+                    style: TextStyle(
+                      color: Colors.white70,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: controller,
+                    keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Email Address',
+                      hintStyle: const TextStyle(
+                        color: Colors.white54,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.email_outlined,
+                        color: _gold,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: const BorderSide(color: _gold),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(30),
+                        borderSide: const BorderSide(
+                          color: _purple,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 17),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: sending
+                          ? null
+                          : () async {
+                              if (controller.text.trim().isEmpty) {
+                                _showMessage(
+                                  'Enter your email address.',
+                                );
+                                return;
+                              }
+
+                              setSheetState(
+                                () => sending = true,
+                              );
+
+                              try {
+                                await _auth.sendPasswordReset(
+                                  controller.text.trim(),
+                                );
+
+                                if (sheetContext.mounted) {
+                                  Navigator.pop(sheetContext);
+                                }
+
+                                _showMessage(
+                                  'If the account exists, a reset link has been sent.',
+                                );
+                              } on FirebaseAuthException catch (error) {
+                                setSheetState(
+                                  () => sending = false,
+                                );
+
+                                _showMessage(
+                                  error.message ??
+                                      'Could not send reset email.',
+                                );
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF351052),
+                        foregroundColor: _lightGold,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                        ),
+                        shape: const StadiumBorder(),
+                      ),
+                      child: Text(
+                        sending
+                            ? 'SENDING...'
+                            : 'SEND RESET LINK',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 18),
-              _field(
-                controller: controller,
-                hint: 'Email Address',
-                icon: Icons.mail_outline,
-                keyboardType: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 17),
-              _goldButton(
-                label: sending ? 'SENDING...' : 'SEND RESET LINK',
-                onPressed: sending
-                    ? null
-                    : () async {
-                        if (controller.text.trim().isEmpty) {
-                          _showMessage('Enter your email address.');
-                          return;
-                        }
-                        setSheetState(() => sending = true);
-                        try {
-                          await _auth.sendPasswordReset(controller.text.trim());
-                          if (sheetContext.mounted) {
-                            Navigator.pop(sheetContext);
-                          }
-                          _showMessage('If the account exists, a reset link has been sent.');
-                        } on FirebaseAuthException catch (error) {
-                          setSheetState(() => sending = false);
-                          _showMessage(error.message ?? 'Could not send reset email.');
-                        }
-                      },
-              ),
-            ],
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
+
     controller.dispose();
+  }
+
+  void _toggleMode() {
+    if (_loading) return;
+
+    setState(() {
+      _isSignup = !_isSignup;
+
+      _identityCtrl.clear();
+      _phoneCtrl.clear();
+      _emailCtrl.clear();
+      _usernameCtrl.clear();
+      _passwordCtrl.clear();
+
+      _hidePassword = true;
+    });
   }
 
   @override
@@ -200,421 +338,454 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailCtrl.dispose();
     _usernameCtrl.dispose();
     _passwordCtrl.dispose();
+
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _background,
-      resizeToAvoidBottomInset: true,
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final designHeight = constraints.maxHeight > constraints.maxWidth * 1.78
-              ? constraints.maxHeight
-              : constraints.maxWidth * 1.78;
-          final w = constraints.maxWidth;
-          final h = designHeight;
-          return SingleChildScrollView(
-            child: SizedBox(
-              width: w,
-              height: h,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.asset(
-                    'assets/images/sitara_live_signup.png',
-                    fit: BoxFit.fill,
-                    errorBuilder: (_, __, ___) => const _RoyalBackdrop(),
-                  ),
-                  if (_isSignup) ...[
-                    _positionedInput(w, h, .445, .055, _phoneCtrl,
-                      'Phone Number', TextInputType.phone,
-                      prefix: _countryPicker()),
-                    _positionedInput(w, h, .545, .055, _emailCtrl,
-                      'Email Address', TextInputType.emailAddress),
-                    _positionedInput(w, h, .645, .055, _passwordCtrl,
-                      'Password', TextInputType.visiblePassword,
-                      obscureText: _hidePassword,
-                      suffix: IconButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: () => setState(() => _hidePassword = !_hidePassword),
-                        icon: Icon(_hidePassword ? Icons.visibility_off : Icons.visibility,
-                          color: _gold, size: 19),
-                      )),
-                    _positionedInput(w, h, .745, .055, _usernameCtrl,
-                      'Username', TextInputType.text),
-                  ] else ...[
-                    _positionedInput(w, h, .545, .065, _identityCtrl,
-                      'Email / Phone', TextInputType.emailAddress),
-                    _positionedInput(w, h, .665, .065, _passwordCtrl,
-                      'Password', TextInputType.visiblePassword,
-                      obscureText: _hidePassword,
-                      suffix: IconButton(
-                        padding: EdgeInsets.zero,
-                        onPressed: () => setState(() => _hidePassword = !_hidePassword),
-                        icon: Icon(_hidePassword ? Icons.visibility_off : Icons.visibility,
-                          color: _gold, size: 19),
-                      )),
-                  ],
-                  Positioned(
-                    left: w * .10,
-                    right: w * .10,
-                    top: h * (_isSignup ? .842 : .785),
-                    height: h * .075,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(50),
-                        onTap: _loading ? null : _submit,
-                        child: Center(
-                          child: _loading
-                              ? const CircularProgressIndicator(color: _gold)
-                              : const SizedBox.expand(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (!_isSignup)
-                    Positioned(
-                      right: w * .10,
-                      top: h * .735,
-                      child: TextButton(
-                        onPressed: _loading ? null : _forgotPassword,
-                        child: const Text('Forgot Password?',
-                          style: TextStyle(color: _lightGold)),
-                      ),
-                    ),
-                  Positioned(
-                    left: w * .15,
-                    right: w * .15,
-                    bottom: h * .018,
-                    height: h * .045,
-                    child: TextButton(
-                      onPressed: _loading ? null : () => setState(() {
-                        _isSignup = !_isSignup;
-                        _identityCtrl.clear();
-                        _phoneCtrl.clear();
-                        _emailCtrl.clear();
-                        _usernameCtrl.clear();
-                        _passwordCtrl.clear();
-                      }),
-                      child: Text(
-                        _isSignup ? 'Already have an account? Login' : "Don't have an account? Sign Up",
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: _lightGold, fontSize: 12,
-                          fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+  // Convert original image coordinates to the current screen.
+  Positioned _designPosition({
+    required double scale,
+    required double cropX,
+    required double cropY,
+    required double x,
+    required double y,
+    required double width,
+    required double height,
+    required Widget child,
+  }) {
+    return Positioned(
+      left: x * scale - cropX,
+      top: y * scale - cropY,
+      width: width * scale,
+      height: height * scale,
+      child: child,
     );
   }
 
-  Widget _positionedInput(
-    double width,
-    double height,
-    double top,
-    double fieldHeight,
-    TextEditingController controller,
-    String hint,
-    TextInputType keyboardType, {
+  Widget _inputBox({
+    required TextEditingController controller,
+    required String hint,
+    required double scale,
+    TextInputType keyboardType = TextInputType.text,
     bool obscureText = false,
+    bool isPhone = false,
     Widget? suffix,
-    Widget? prefix,
   }) {
-    return Positioned(
-      left: width * .245,
-      right: width * .105,
-      top: height * top,
-      height: height * fieldHeight,
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xF2100B18),
+        borderRadius: BorderRadius.circular(35 * scale),
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: 9 * scale,
+      ),
+      alignment: Alignment.center,
       child: Row(
         children: [
-          if (prefix != null)
-            SizedBox(width: width * .14, child: prefix),
+          if (isPhone)
+            SizedBox(
+              width: 115 * scale,
+              child: CountryCodePicker(
+                initialSelection: 'PK',
+                showCountryOnly: false,
+                showOnlyCountryWhenClosed: false,
+                showFlag: true,
+                showFlagDialog: true,
+                hideSearch: false,
+                comparator: (a, b) =>
+                    (a.name ?? '').compareTo(b.name ?? ''),
+                favorite: const [
+                  'PK',
+                  'AE',
+                  'SA',
+                  'GB',
+                  'US',
+                ],
+                padding: EdgeInsets.zero,
+                textStyle: TextStyle(
+                  color: _lightGold,
+                  fontSize: 21 * scale,
+                ),
+                dialogTextStyle: TextStyle(
+                  color: Colors.black,
+                  fontSize: 20 * scale,
+                ),
+                onChanged: (country) {
+                  _dialCode = country.dialCode ?? '+92';
+                },
+                onInit: (country) {
+                  _dialCode = country?.dialCode ?? '+92';
+                },
+              ),
+            ),
           Expanded(
             child: TextField(
               controller: controller,
               keyboardType: keyboardType,
               obscureText: obscureText,
               textAlignVertical: TextAlignVertical.center,
-              style: const TextStyle(color: Colors.white, fontSize: 14),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 26 * scale,
+              ),
+              cursorColor: _gold,
               decoration: InputDecoration(
                 hintText: hint,
-                hintStyle: const TextStyle(color: Colors.white70, fontSize: 14),
+                hintStyle: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 25 * scale,
+                ),
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8 * scale,
+                  vertical: 8 * scale,
+                ),
                 suffixIcon: suffix,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _brand() {
-    return Column(
-      children: [
-        Container(
-          width: 132,
-          height: 132,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: _gold, width: 1.6),
-            boxShadow: const [
-              BoxShadow(color: _purple, blurRadius: 24, spreadRadius: 1),
-              BoxShadow(color: _gold, blurRadius: 12),
-            ],
-            gradient: const RadialGradient(
-              colors: [Color(0xFF32104A), Color(0xFF08040D)],
-            ),
-          ),
-          child: ClipOval(
-            child: Padding(
-              padding: const EdgeInsets.all(13),
-              child: Image.asset(
-                'assets/images/logo.png',
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(
-                  Icons.auto_awesome,
-                  color: _gold,
-                  size: 70,
+                suffixIconConstraints: BoxConstraints(
+                  minWidth: 42 * scale,
+                  minHeight: 42 * scale,
                 ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        const Text(
-          'SITARA',
-          style: TextStyle(
-            color: _lightGold,
-            fontSize: 43,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 8,
-            shadows: [Shadow(color: _gold, blurRadius: 18)],
-          ),
-        ),
-        const Text(
-          'L I V E',
-          style: TextStyle(
-            color: _purple,
-            fontSize: 21,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 8,
-          ),
-        ),
-        const SizedBox(height: 7),
-        const Text(
-          'LIVE YOUR MOMENT',
-          style: TextStyle(color: _gold, fontSize: 10, letterSpacing: 4),
-        ),
-      ],
-    );
-  }
-
-  Widget _countryPicker() {
-    return CountryCodePicker(
-      initialSelection: 'PK',
-      showCountryOnly: false,
-      showOnlyCountryWhenClosed: false,
-      showFlag: true,
-      showFlagDialog: true,
-      hideSearch: false,
-      comparator: (a, b) => (a.name ?? '').compareTo(b.name ?? ''),
-      favorite: const ['PK', 'AE', 'SA', 'GB', 'US'],
-      padding: const EdgeInsets.only(left: 8),
-      textStyle: const TextStyle(color: _lightGold, fontSize: 13),
-      onChanged: (country) => _dialCode = country.dialCode ?? '+92',
-      onInit: (country) => _dialCode = country?.dialCode ?? '+92',
-    );
-  }
-
-  Widget _passwordField() {
-    return _field(
-      controller: _passwordCtrl,
-      hint: 'Password',
-      icon: Icons.lock_outline,
-      obscureText: _hidePassword,
-      suffix: IconButton(
-        onPressed: () => setState(() => _hidePassword = !_hidePassword),
-        icon: Icon(
-          _hidePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-          color: _gold,
-        ),
-      ),
-    );
-  }
-
-  Widget _field({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    TextInputType keyboardType = TextInputType.text,
-    bool obscureText = false,
-    Widget? suffix,
-    Widget? prefix,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(42),
-        gradient: const LinearGradient(
-          colors: [_lightGold, _purple, _gold, _purple, _lightGold],
-        ),
-        boxShadow: [
-          BoxShadow(color: _purple.withOpacity(.28), blurRadius: 16),
-          BoxShadow(color: _gold.withOpacity(.12), blurRadius: 20),
         ],
       ),
-      padding: const EdgeInsets.all(1.7),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF100B18),
-          borderRadius: BorderRadius.circular(40),
-        ),
-        child: Row(
+    );
+  }
+
+  Widget _passwordSuffix(double scale) {
+    return IconButton(
+      padding: EdgeInsets.zero,
+      onPressed: () {
+        setState(() {
+          _hidePassword = !_hidePassword;
+        });
+      },
+      icon: Icon(
+        _hidePassword
+            ? Icons.visibility_off
+            : Icons.visibility,
+        color: _gold,
+        size: 27 * scale,
+      ),
+    );
+  }
+
+  Widget _signupButton(double scale) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(60 * scale),
+        onTap: _loading ? null : _submit,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 15, right: 11),
-              child: Icon(icon, color: _gold, size: 24),
-            ),
-            Container(width: 1, height: 30, color: _gold.withOpacity(.65)),
-            if (prefix != null) prefix,
-            Expanded(
-              child: TextField(
-                controller: controller,
-                keyboardType: keyboardType,
-                obscureText: obscureText,
-                style: const TextStyle(color: Colors.white, fontSize: 15),
-                decoration: InputDecoration(
-                  hintText: hint,
-                  hintStyle: const TextStyle(color: Colors.white70),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 18),
-                  suffixIcon: suffix,
+            if (!_isSignup)
+              Text(
+                'LOG IN',
+                style: TextStyle(
+                  color: _lightGold,
+                  fontSize: 37 * scale,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 8 * scale,
+                  shadows: const [
+                    Shadow(
+                      color: _gold,
+                      blurRadius: 12,
+                    ),
+                  ],
                 ),
               ),
-            ),
+            if (_loading)
+              SizedBox(
+                width: 38 * scale,
+                height: 38 * scale,
+                child: const CircularProgressIndicator(
+                  color: _lightGold,
+                  strokeWidth: 3,
+                ),
+              ),
           ],
         ),
       ),
     );
   }
-
-  Widget _goldButton({required String label, required VoidCallback? onPressed}) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(45),
-        gradient: const LinearGradient(
-          colors: [_lightGold, Color(0xFFB87918), _gold, Color(0xFF8B4B0B)],
-        ),
-        boxShadow: [
-          BoxShadow(color: _gold.withOpacity(.25), blurRadius: 17),
-          BoxShadow(color: _purple.withOpacity(.22), blurRadius: 14),
-        ],
-      ),
-      padding: const EdgeInsets.all(2),
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF170C20),
-          disabledBackgroundColor: const Color(0xFF302034),
-          foregroundColor: _lightGold,
-          elevation: 0,
-          shape: const StadiumBorder(),
-          padding: const EdgeInsets.symmetric(vertical: 17),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: _lightGold,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 4,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoyalBackdrop extends StatelessWidget {
-  const _RoyalBackdrop();
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment(0, -.45),
-          radius: 1.25,
-          colors: [
-            Color(0xFF351052),
-            Color(0xFF180923),
-            Color(0xFF09040F),
-            Color(0xFF030207),
-          ],
-          stops: [0, .38, .76, 1],
+    final screenSize = MediaQuery.sizeOf(context);
+
+    final screenWidth = screenSize.width;
+    final screenHeight = screenSize.height;
+
+    return Scaffold(
+      backgroundColor: _background,
+
+      // The scroll view stays available while the keyboard is open.
+      resizeToAvoidBottomInset: false,
+
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: SingleChildScrollView(
+          keyboardDismissBehavior:
+              ScrollViewKeyboardDismissBehavior.onDrag,
+          child: SizedBox(
+            width: screenWidth,
+            height: screenHeight,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final w = constraints.maxWidth;
+                final h = constraints.maxHeight;
+
+                // Cover the screen without stretching the original artwork.
+                final scale = [
+                  w / _designWidth,
+                  h / _designHeight,
+                ].reduce((a, b) => a > b ? a : b);
+
+                final renderedWidth = _designWidth * scale;
+                final renderedHeight = _designHeight * scale;
+
+                final cropX = (renderedWidth - w) / 2;
+                final cropY = (renderedHeight - h) / 2;
+
+                return Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    // Signup artwork.
+                    Positioned.fill(
+                      child: Image.asset(
+                        'assets/images/sitara_live_signup.png',
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            decoration: const BoxDecoration(
+                              gradient: RadialGradient(
+                                colors: [
+                                  Color(0xFF351052),
+                                  Color(0xFF180923),
+                                  Color(0xFF050208),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                    if (_isSignup) ...[
+                      // Phone number.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 697,
+                        width: 620,
+                        height: 85,
+                        child: _inputBox(
+                          controller: _phoneCtrl,
+                          hint: 'Phone Number',
+                          keyboardType: TextInputType.phone,
+                          isPhone: true,
+                          scale: scale,
+                        ),
+                      ),
+
+                      // Email address.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 850,
+                        width: 620,
+                        height: 85,
+                        child: _inputBox(
+                          controller: _emailCtrl,
+                          hint: 'Email Address',
+                          keyboardType: TextInputType.emailAddress,
+                          scale: scale,
+                        ),
+                      ),
+
+                      // Password.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 1000,
+                        width: 620,
+                        height: 85,
+                        child: _inputBox(
+                          controller: _passwordCtrl,
+                          hint: 'Password',
+                          keyboardType: TextInputType.visiblePassword,
+                          obscureText: _hidePassword,
+                          suffix: _passwordSuffix(scale),
+                          scale: scale,
+                        ),
+                      ),
+
+                      // Username.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 1150,
+                        width: 620,
+                        height: 85,
+                        child: _inputBox(
+                          controller: _usernameCtrl,
+                          hint: 'Username',
+                          keyboardType: TextInputType.text,
+                          scale: scale,
+                        ),
+                      ),
+                    ] else ...[
+                      // Hide the phone row in login mode.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 697,
+                        width: 620,
+                        height: 85,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xF2100B18),
+                            borderRadius: BorderRadius.circular(
+                              35 * scale,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Login email or phone.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 850,
+                        width: 620,
+                        height: 85,
+                        child: _inputBox(
+                          controller: _identityCtrl,
+                          hint: 'Email / Phone',
+                          keyboardType: TextInputType.emailAddress,
+                          scale: scale,
+                        ),
+                      ),
+
+                      // Login password.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 1000,
+                        width: 620,
+                        height: 85,
+                        child: _inputBox(
+                          controller: _passwordCtrl,
+                          hint: 'Password',
+                          keyboardType: TextInputType.visiblePassword,
+                          obscureText: _hidePassword,
+                          suffix: _passwordSuffix(scale),
+                          scale: scale,
+                        ),
+                      ),
+
+                      // Forgot password replaces the username row.
+                      _designPosition(
+                        scale: scale,
+                        cropX: cropX,
+                        cropY: cropY,
+                        x: 208,
+                        y: 1150,
+                        width: 620,
+                        height: 85,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xF2100B18),
+                            borderRadius: BorderRadius.circular(
+                              35 * scale,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: TextButton(
+                            onPressed: _loading
+                                ? null
+                                : _forgotPassword,
+                            child: Text(
+                              'Forgot Password?',
+                              style: TextStyle(
+                                color: _lightGold,
+                                fontSize: 25 * scale,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // Signup / Login artwork button is clickable.
+                    _designPosition(
+                      scale: scale,
+                      cropX: cropX,
+                      cropY: cropY,
+                      x: 94,
+                      y: 1285,
+                      width: 713,
+                      height: 112,
+                      child: _signupButton(scale),
+                    ),
+
+                    // Switch between signup and login.
+                    _designPosition(
+                      scale: scale,
+                      cropX: cropX,
+                      cropY: cropY,
+                      x: 145,
+                      y: 1420,
+                      width: 610,
+                      height: 58,
+                      child: TextButton(
+                        onPressed: _toggleMode,
+                        child: Text(
+                          _isSignup
+                              ? 'Already have an account? Login'
+                              : "Don't have an account? Sign Up",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _lightGold,
+                            fontSize: 22 * scale,
+                            fontWeight: FontWeight.w600,
+                            shadows: const [
+                              Shadow(
+                                color: _purple,
+                                blurRadius: 8,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
         ),
       ),
-      child: CustomPaint(painter: _CornerGlowPainter()),
     );
   }
-}
-
-class _CornerGlowPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final gold = const Color(0xFFFFD36A);
-    final purple = const Color(0xFFB52CFF);
-
-    for (final isRight in [false, true]) {
-      final x = isRight ? size.width : 0.0;
-      final direction = isRight ? -1.0 : 1.0;
-      final topPath = Path()
-        ..moveTo(x, 0)
-        ..cubicTo(x + direction * 70, 18, x + direction * 45, 80, x + direction * 115, 115);
-      paint
-        ..color = gold.withOpacity(.72)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-      canvas.drawPath(topPath, paint);
-      paint
-        ..color = purple.withOpacity(.78)
-        ..strokeWidth = 5
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
-      canvas.drawPath(topPath, paint);
-
-      final bottomPath = Path()
-        ..moveTo(x, size.height)
-        ..cubicTo(x + direction * 65, size.height - 25, x + direction * 45, size.height - 85, x + direction * 125, size.height - 120);
-      paint
-        ..color = gold.withOpacity(.72)
-        ..strokeWidth = 2
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-      canvas.drawPath(bottomPath, paint);
-      paint
-        ..color = purple.withOpacity(.78)
-        ..strokeWidth = 5
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
-      canvas.drawPath(bottomPath, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
